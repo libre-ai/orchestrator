@@ -1,0 +1,21 @@
+[package]
+name = "libre-ai-agent-orchestrator"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "agent-orchestrator"
+path = "src/main.rs"
+
+[dependencies]
+chrono.workspace = true
+libre-ai-contract-types = { path = "../contract-types" }
+serde_json.workspace = true
+sha2.workspace = true

@@ -1,0 +1,37 @@
+{
+  "profile": "libre-ai.agent-orchestrator.g2-simulator.v1",
+  "cases": [
+    {
+      "name": "complete",
+      "scenario": "complete",
+      "maxDurationSeconds": 2,
+      "fixture": "complete.expected.ndjson",
+      "types": ["started", "progressed", "result-submitted"],
+      "streamSha256": "8736d0222288c4f2f7912e460618c65504024ec076f6fe3448d99758824839e8"
+    },
+    {
+      "name": "blocked",
+      "scenario": "blocked",
+      "maxDurationSeconds": 2,
+      "fixture": "blocked.expected.ndjson",
+      "types": ["started", "blocked", "decision-requested"],
+      "streamSha256": "b2bf24badd36d40f3ea2e0a78ba7016af25b2be1d0955f3bfb49e293d251cbde"
+    },
+    {
+      "name": "duration-budget",
+      "scenario": "complete",
+      "maxDurationSeconds": 1,
+      "fixture": "budget.expected.ndjson",
+      "types": ["started", "budget-exceeded"],
+      "streamSha256": "d2890e3f6708c63e57083a5ed241ef9a9e8c8c4e9d20e50f3e02050891642da4"
+    },
+    {
+      "name": "failed",
+      "scenario": "failed",
+      "maxDurationSeconds": 1,
+      "fixture": "failed.expected.ndjson",
+      "types": ["started", "failed"],
+      "streamSha256": "9e65a65c42ee43d5fc14330895f846c55fb24da5d6cfd14014cadb03a5efaf58"
+    }
+  ]
+}
