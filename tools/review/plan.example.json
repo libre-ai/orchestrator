@@ -1,0 +1,12 @@
+{
+  "subject": "example-subject-v1",
+  "commit": "0000000000000000000000000000000000000000",
+  "roles": ["security", "privacy", "architecture"],
+  "mode": "specialized-role",
+  "evidence": ["contracts/catalog.v1.json", "docs/reviews/AGENT-REVIEW-PROTOCOL.md"],
+  "concurrency": 5,
+  "provider": "openai-codex",
+  "model": "gpt-5.6-sol",
+  "thinking": "xhigh",
+  "outputDir": "docs/reviews/example-subject-v1/0000000"
+}
