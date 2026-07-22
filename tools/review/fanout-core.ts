@@ -1,3 +1,4 @@
+import { type EnvelopeKey, renderGuarded, wrapUntrusted } from "@libre-ai/envelope";
 import Ajv2020 from "ajv/dist/2020";
 
 // Pure orchestration logic for role-separated review fan-out.
@@ -268,6 +269,30 @@ export function validateVerdict(candidate: unknown, job: ReviewJob): string[] {
     errors.push(`commitSha mismatch: expected ${job.commit}, got ${verdict.commitSha}`);
   }
   return errors;
+}
+
+/**
+ * Wrap evidence content in an integrity-signed envelope (K3 enforcement).
+ * External tool output is untrusted; the envelope makes it impossible to
+ * forge guard delimiters or alter content undetectably. renderGuarded verifies
+ * before rendering.
+ */
+export function guardEvidence(
+  path: string,
+  content: string,
+  key: EnvelopeKey,
+  capturedAt: string,
+): string {
+  const envelope = wrapUntrusted(
+    {
+      source: "tool-output",
+      label: path,
+      content,
+      capturedAt,
+    },
+    key,
+  );
+  return renderGuarded(envelope, key);
 }
 
 // Bounded-concurrency executor. Order of results matches order of items.

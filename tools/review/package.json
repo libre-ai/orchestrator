@@ -1,0 +1,19 @@
+{
+  "name": "@libre-ai/review-tools",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "EUPL-1.2",
+  "description": "Review orchestration and fan-out tooling",
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "dependencies": {
+    "@libre-ai/envelope": "workspace:*",
+    "ajv": "8.20.0"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.14",
+    "typescript": "7.0.2"
+  }
+}

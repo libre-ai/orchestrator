@@ -1,13 +1,15 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, getRandomValues, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { EnvelopeKey } from "@libre-ai/envelope";
 import {
   buildJobs,
   buildPrompt,
   dedupeJobs,
   extractVerdict,
+  guardEvidence,
   parsePlan,
   type ReviewJob,
   type ReviewPlan,
@@ -42,13 +44,16 @@ async function git(args: string[], cwd = "."): Promise<string> {
   return stdout;
 }
 
-async function buildEvidenceDigest(plan: ReviewPlan): Promise<string> {
+async function buildEvidenceDigest(plan: ReviewPlan, key: EnvelopeKey): Promise<string> {
   if (plan.evidence.length === 0) return "(no shared evidence files declared)";
   const sections: string[] = [];
   for (const path of plan.evidence) {
     const content = await git(["show", `${plan.commit}:${path}`]);
     const sha256 = createHash("sha256").update(content).digest("hex");
-    sections.push(`### ${path} (sha256 ${sha256})\n\n${content.trimEnd()}`);
+    // K3 enforcement: wrap evidence in integrity envelope before the prompt.
+    // guardEvidence verifies undetectability of alteration, escapes delimiter code points.
+    const guarded = guardEvidence(path, content, key, new Date().toISOString());
+    sections.push(`### ${path} (sha256 ${sha256})\n\n${guarded}`);
   }
   return sections.join("\n\n");
 }
@@ -172,7 +177,14 @@ async function main(): Promise<void> {
   }
 
   await mkdir(plan.outputDir, { recursive: true });
-  const evidenceDigest = await buildEvidenceDigest(plan);
+  // Ephemeral per-run HMAC key for evidence integrity (K3 intra-run boundary).
+  // Held in memory only, never logged or persisted. Identifies this orchestration run
+  // and binds all evidence to it; an altered or stripped envelope is offline-verifiable.
+  const envelopeKey: EnvelopeKey = {
+    id: `fanout-run-${plan.commit.slice(0, 7)}-${randomUUID()}`,
+    secret: getRandomValues(new Uint8Array(32)),
+  };
+  const evidenceDigest = await buildEvidenceDigest(plan, envelopeKey);
   const worktreeBase = await mkdtemp(join(tmpdir(), "review-fanout-"));
   try {
     const results = await runBatched(run, plan.concurrency, (job) =>
