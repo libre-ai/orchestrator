@@ -33,6 +33,7 @@ export interface DedupeResult {
 }
 
 const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/;
+const EVIDENCE_PATH_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
 const DEFAULT_CONCURRENCY = 5;
 
 // Verdict envelope schema. Kept tool-side on purpose: it is promoted to
@@ -139,6 +140,18 @@ export function parsePlan(raw: unknown): ReviewPlan {
   const evidence = Array.isArray(plan.evidence)
     ? plan.evidence.filter((path): path is string => typeof path === "string")
     : [];
+  // Evidence paths reach the model-facing prompt as raw section headers
+  // (`### ${path}`) and a `git show <commit>:<path>` argument. Fail closed at
+  // parse time: repo-relative, safe character set, no traversal — a path
+  // carrying guard delimiters, spaces or newlines never enters the pipeline
+  // (K4 review of f49fc18, finding 3).
+  for (const path of evidence) {
+    if (!EVIDENCE_PATH_PATTERN.test(path) || path.includes("..")) {
+      errors.push(
+        `evidence: unsafe path (allowed: [A-Za-z0-9._/-], repo-relative, no ".."): ${JSON.stringify(path)}`,
+      );
+    }
+  }
 
   const concurrency =
     plan.concurrency === undefined ? DEFAULT_CONCURRENCY : Number(plan.concurrency);
