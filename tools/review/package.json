@@ -9,7 +9,7 @@
     "bun": ">=1.4.0"
   },
   "dependencies": {
-    "@libre-ai/envelope": "workspace:*",
+    "@libre-ai/envelope": "github:libre-ai/envelope#ad0e1a6d014ee531dd1938ed04c6b678c605dc9c",
     "ajv": "8.20.0"
   },
   "devDependencies": {
