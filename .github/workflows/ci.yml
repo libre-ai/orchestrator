@@ -129,8 +129,12 @@ jobs:
       # reported loudly (failed-step annotation + job summary) and enforced by
       # nobody. Same reasoning for `[advisories] yanked = "deny"` in deny.toml:
       # yanking is a remote event too, so the blocking step above does not run it.
+      # `!cancelled()`: the advisory half is independent of the blocking half, so it
+      # still runs when `cargo deny` fails — that is precisely when someone reading
+      # a red job wants to know whether there is also a live vulnerability.
       - name: cargo audit — advisories (reported, never blocking)
         id: audit
+        if: ${{ !cancelled() }}
         continue-on-error: true
         run: |
           set -euo pipefail
