@@ -70,3 +70,111 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo test --locked --all-features
+
+  dependency-policy:
+    name: Dependency policy
+    runs-on: ubuntu-latest
+    # Both tools are pinned the way this chain already pins Bun: exact version AND
+    # SHA-256 of the archive. A tag can be re-pointed at other bytes; a digest
+    # cannot. `cargo install` is deliberately absent — it resolves a fresh
+    # dependency graph on every run, which is the opposite of a gate.
+    # Digests read from the GitHub release API (`.assets[].digest`).
+    env:
+      CARGO_DENY_VERSION: "0.19.5"
+      CARGO_DENY_SHA256: "5ea64ae09959b5fe1072d898f95caaa89b374678ba6728d5e9ed1366745479b0"
+      CARGO_AUDIT_VERSION: "v0.22.1"
+      CARGO_AUDIT_SHA256: "c32506f338bdcdaef5a17fb9f33abb6ecf9561324cfd34237fd335f9283a1eab"
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable action
+      - name: Install pinned cargo-deny and cargo-audit
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/dep-policy/bin"
+          mkdir -p "$bin" "$RUNNER_TEMP/dep-policy/deny" "$RUNNER_TEMP/dep-policy/audit"
+
+          echo "cargo-deny ${CARGO_DENY_VERSION} sha256:${CARGO_DENY_SHA256}"
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/cargo-deny.tar.gz" \
+            "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+          echo "${CARGO_DENY_SHA256}  $RUNNER_TEMP/cargo-deny.tar.gz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/cargo-deny.tar.gz" -C "$RUNNER_TEMP/dep-policy/deny"
+          install -m 0755 "$RUNNER_TEMP"/dep-policy/deny/*/cargo-deny "$bin/cargo-deny"
+
+          echo "cargo-audit ${CARGO_AUDIT_VERSION} sha256:${CARGO_AUDIT_SHA256}"
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/cargo-audit.tgz" \
+            "https://github.com/rustsec/rustsec/releases/download/cargo-audit%2F${CARGO_AUDIT_VERSION}/cargo-audit-x86_64-unknown-linux-musl-${CARGO_AUDIT_VERSION}.tgz"
+          echo "${CARGO_AUDIT_SHA256}  $RUNNER_TEMP/cargo-audit.tgz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/cargo-audit.tgz" -C "$RUNNER_TEMP/dep-policy/audit"
+          install -m 0755 "$RUNNER_TEMP"/dep-policy/audit/*/cargo-audit "$bin/cargo-audit"
+
+          echo "$bin" >> "$GITHUB_PATH"
+
+      # BLOCKING. bans/licenses/sources read only `deny.toml` and `Cargo.lock`, so
+      # the verdict is a function of the commit: green today stays green tomorrow
+      # unless a dependency actually changes. That reproducibility is what makes it
+      # safe to block a merge on. `advisories` is deliberately absent — next step.
+      - name: cargo deny — bans, licenses, sources (blocking)
+        run: |
+          set -euo pipefail
+          echo "config:  deny.toml"
+          echo "tool:    cargo-deny ${CARGO_DENY_VERSION}"
+          echo "checks:  bans, licenses, sources"
+          cargo deny check --show-stats bans licenses sources
+
+      # NON-BLOCKING, on purpose. Both commands below match this same `Cargo.lock`
+      # against the RustSec database, which changes without this repository
+      # changing: an advisory published tonight turns the verdict red tomorrow on
+      # a commit nobody touched, blocking every unrelated PR until an upstream fix
+      # ships. A verdict that moves on its own cannot be a merge gate — it is
+      # reported loudly (failed-step annotation + job summary) and enforced by
+      # nobody.
+      #
+      # `cargo deny check advisories` runs here rather than nowhere, because it is
+      # the only command that executes `[advisories] yanked = "deny"` from
+      # deny.toml. cargo audit does detect yanked crates, but through its own
+      # default rather than through that line: without this call the setting could
+      # be flipped to "warn" with no observable change in CI — the exact class of
+      # defect (versioned policy that nothing executes) this job exists to remove.
+      # A yank is a remote event like an advisory, so it lands non-blocking.
+      #
+      # `!cancelled()`: the advisory half is independent of the blocking half, so it
+      # still runs when `cargo deny` fails — that is precisely when someone reading
+      # a red job wants to know whether there is also a live vulnerability.
+      - name: Advisories and yanked releases (reported, never blocking)
+        id: audit
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: |
+          # Not `set -e`: both scanners must run even when the first reports
+          # findings, so their exit codes are captured instead of being fatal.
+          set -uo pipefail
+          echo "tools:    cargo-audit ${CARGO_AUDIT_VERSION}, cargo-deny ${CARGO_DENY_VERSION}"
+          echo "database: RustSec advisory-db, fetched now — this verdict is time-dependent"
+          audit_rc=0
+          cargo audit --deny warnings || audit_rc=$?
+          deny_rc=0
+          cargo deny check --show-stats advisories || deny_rc=$?
+          echo "cargo audit --deny warnings  -> exit ${audit_rc}"
+          echo "cargo deny check advisories  -> exit ${deny_rc}"
+          if [ "${audit_rc}" -ne 0 ] || [ "${deny_rc}" -ne 0 ]; then
+            echo "::warning title=Dependency advisories::Advisory scan reported findings; read the log of this job. Deliberately not blocking — this verdict can change with no commit on this repository."
+            exit 1
+          fi
+
+      # A silent green gate is the defect this job exists to remove: state what ran,
+      # over how many crates, and what the advisory half concluded.
+      - name: Report what was verified
+        if: always()
+        run: |
+          set -euo pipefail
+          packages=$(cargo metadata --locked --format-version 1 | jq '.packages | length')
+          {
+            echo "### Dependency policy"
+            echo
+            echo "| what | value |"
+            echo "| --- | --- |"
+            echo "| resolved graph | ${packages} packages (\`Cargo.lock\`, all features per \`deny.toml\`) |"
+            echo "| blocking | \`cargo deny check bans licenses sources\` — cargo-deny ${CARGO_DENY_VERSION} |"
+            echo "| reported only | \`cargo audit --deny warnings\` + \`cargo deny check advisories\` — cargo-audit ${CARGO_AUDIT_VERSION}, cargo-deny ${CARGO_DENY_VERSION} — outcome: **${{ steps.audit.outcome }}** |"
+            echo "| policy source | \`deny.toml\`: licence allowlist, \`wildcards = deny\`, registry and org allowlist |"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
