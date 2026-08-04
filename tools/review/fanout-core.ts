@@ -331,3 +331,94 @@ export async function runBatched<T, R>(
   await Promise.all(workers);
   return results;
 }
+
+// ── Run journal ───────────────────────────────────────────────────────────────
+//
+// A pass already records a verdict file when it succeeds. What was never
+// recorded is WHEN each step happened, and what happened on a pass that
+// produced no verdict at all — one that died before writing left a line on
+// stderr and nothing else. Three properties are deliberate:
+//
+//   * success is earned — a pass reads `fail` until its events say otherwise,
+//     so an interrupted journal never reconstructs as a green pass;
+//   * the agent call is the only event that spans time, so it carries both
+//     endpoints; every other event is a point and has `at` alone;
+//   * events are appended while the pass runs, never batched at the end. A hung
+//     pass is precisely when its journal is worth having, and a hung pass
+//     flushes nothing at exit.
+
+export type ReviewEventType =
+  | "pass_start"
+  | "worktree_ready"
+  | "agent_call"
+  | "worktree_dirty"
+  | "verdict_recorded"
+  | "verdict_rejected"
+  | "worktree_removed"
+  | "pass_end";
+
+export interface ReviewEvent {
+  readonly reviewPassId: string;
+  readonly role: string;
+  readonly type: ReviewEventType;
+  /** When the event was recorded, ISO 8601. */
+  readonly at: string;
+  /** Set only by `agent_call`, the one event that spans time. */
+  readonly endedAt?: string;
+  readonly detail?: Readonly<Record<string, unknown>>;
+}
+
+export interface PassReplay {
+  readonly role: string;
+  readonly status: "success" | "fail";
+  readonly startedAt: string;
+  readonly endedAt: string | null;
+  readonly reason: string;
+}
+
+/**
+ * Reconstruct each pass's outcome from its events alone.
+ *
+ * This is the journal's acceptance test: if the status it reports here ever
+ * disagrees with the verdict files on disk, one of the two is lying, and the
+ * journal is the one that can be checked without trusting the reviewer.
+ */
+export function replayPassStatuses(events: readonly ReviewEvent[]): PassReplay[] {
+  const byPass = new Map<string, ReviewEvent[]>();
+  for (const event of events) {
+    const bucket = byPass.get(event.reviewPassId);
+    if (bucket === undefined) byPass.set(event.reviewPassId, [event]);
+    else bucket.push(event);
+  }
+
+  return [...byPass.values()].map((passEvents) => {
+    const first = passEvents[0] as ReviewEvent;
+    const has = (type: ReviewEventType) => passEvents.some((event) => event.type === type);
+    const end = passEvents.find((event) => event.type === "pass_end");
+    // Earned, not assumed: both the verdict and the closing event are required,
+    // so a journal that stops mid-pass reconstructs as a failure.
+    const status = has("verdict_recorded") && end !== undefined ? "success" : "fail";
+    const reason =
+      status === "success"
+        ? "verdict recorded and pass closed"
+        : has("worktree_dirty")
+          ? "worktree dirty after the pass — the reviewer wrote to the tree"
+          : has("verdict_rejected")
+            ? "verdict rejected by validation"
+            : // Ordered before the agent_call case on purpose: a pass whose
+              // verdict landed but whose closing event never did is interrupted,
+              // and saying "produced no verdict" of it would be false.
+              end === undefined
+              ? "pass never closed — interrupted or still running"
+              : has("agent_call")
+                ? "agent ran without producing an accepted verdict"
+                : "pass closed without a verdict";
+    return {
+      role: first.role,
+      status,
+      startedAt: first.at,
+      endedAt: end?.at ?? null,
+      reason,
+    };
+  });
+}

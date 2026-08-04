@@ -1,6 +1,6 @@
 import { createHash, getRandomValues, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { EnvelopeKey } from "@libre-ai/envelope";
@@ -11,11 +11,43 @@ import {
   extractVerdict,
   guardEvidence,
   parsePlan,
+  type ReviewEvent,
+  type ReviewEventType,
   type ReviewJob,
   type ReviewPlan,
+  replayPassStatuses,
   runBatched,
   validateVerdict,
 } from "./fanout-core";
+
+type Emit = (
+  type: ReviewEventType,
+  detail?: Record<string, unknown>,
+  span?: { readonly startedAt: string },
+) => Promise<void>;
+
+/**
+ * Append-only JSONL journal, written while passes run rather than at the end.
+ *
+ * One line per event, appended in `a` mode: concurrent passes each write a
+ * single short line, which POSIX append keeps atomic at this size. Nothing here
+ * buffers — a hung or killed pass is exactly when the journal earns its keep,
+ * and it would flush nothing at exit.
+ */
+function journalWriter(path: string, job: ReviewJob): Emit {
+  return async (type, detail, span) => {
+    const now = new Date().toISOString();
+    const event: ReviewEvent = {
+      reviewPassId: job.reviewPassId,
+      role: job.role,
+      type,
+      at: span?.startedAt ?? now,
+      ...(span === undefined ? {} : { endedAt: now }),
+      ...(detail === undefined ? {} : { detail }),
+    };
+    await appendFile(path, `${JSON.stringify(event)}\n`);
+  };
+}
 
 // Review fan-out orchestrator (docs/reviews/AGENT-REVIEW-PROTOCOL.md,
 // "Orchestration mechanics"). Launches one pi review pass per role against an
@@ -63,15 +95,19 @@ async function runJob(
   job: ReviewJob,
   worktreeBase: string,
   evidenceDigest: string,
+  emit: Emit,
 ): Promise<JobResult> {
   const startedAt = new Date().toISOString();
   const start = performance.now();
   const worktree = join(worktreeBase, job.role);
   const errors: string[] = [];
+  await emit("pass_start", { commit: job.commit, mode: job.mode });
   try {
     await git(["worktree", "add", "--detach", worktree, job.commit]);
+    await emit("worktree_ready");
     try {
       const prompt = buildPrompt(job, evidenceDigest);
+      const agentStartedAt = new Date().toISOString();
       const proc = Bun.spawn(
         [
           "pi",
@@ -91,15 +127,26 @@ async function runJob(
         new Response(proc.stderr).text(),
         proc.exited,
       ]);
+      // The agent call is the only step that spans time, so it is the only
+      // event carrying both endpoints.
+      await emit(
+        "agent_call",
+        { exitCode, provider: plan.provider, model: plan.model, thinking: plan.thinking },
+        { startedAt: agentStartedAt },
+      );
       if (exitCode !== 0) {
         errors.push(`pi exited ${exitCode}: ${stderr.trim().slice(0, 500)}`);
       } else {
         const dirty = (await git(["status", "--porcelain"], worktree)).trim();
         if (dirty.length > 0) {
           errors.push(`worktree dirty after review pass, pass invalid:\n${dirty}`);
+          // A reviewer that wrote to the tree it was reviewing is a breach, not
+          // a finding: the write already happened and no rerun undoes it.
+          await emit("worktree_dirty", { paths: dirty.split("\n").length });
         } else {
           const verdict = extractVerdict(stdout);
           errors.push(...validateVerdict(verdict, job));
+          if (errors.length > 0) await emit("verdict_rejected", { violations: errors.length });
           if (errors.length === 0) {
             const record = {
               ...(verdict as Record<string, unknown>),
@@ -113,21 +160,55 @@ async function runJob(
               },
             };
             await Bun.write(job.outputPath, `${JSON.stringify(record, null, 2)}\n`);
+            await emit("verdict_recorded", { outputPath: job.outputPath });
           }
         }
       }
     } finally {
       await git(["worktree", "remove", "--force", worktree]);
+      await emit("worktree_removed");
     }
   } catch (cause) {
     errors.push(String(cause));
   }
-  return {
-    job,
-    ok: errors.length === 0,
-    errors,
-    durationMs: Math.round(performance.now() - start),
-  };
+  const durationMs = Math.round(performance.now() - start);
+  await emit("pass_end", { ok: errors.length === 0, durationMs });
+  return { job, ok: errors.length === 0, errors, durationMs };
+}
+
+/**
+ * Replay the journal and check it against what the run itself observed.
+ *
+ * The journal is only worth keeping if it can stand in for the verdict files,
+ * so every run verifies that claim: if the replayed status disagrees with the
+ * in-memory result, the journal is wrong and says so loudly rather than being
+ * trusted later by an auditor who has nothing else left to read.
+ */
+async function reportJournal(journalPath: string, results: readonly JobResult[]): Promise<void> {
+  const journal = Bun.file(journalPath);
+  if (!(await journal.exists())) {
+    console.error(`journal missing at ${journalPath} — the run produced no replayable trace`);
+    return;
+  }
+  const events = (await journal.text())
+    .split("\n")
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as ReviewEvent);
+  const replay = replayPassStatuses(events);
+  console.log(`journal ${journalPath} — ${events.length} events across ${replay.length} pass(es)`);
+
+  const observed = new Map(results.map((result) => [result.job.reviewPassId, result.ok]));
+  for (const pass of replay) {
+    const match = results.find((result) => result.job.role === pass.role);
+    const expected = match === undefined ? undefined : observed.get(match.job.reviewPassId);
+    if (expected !== undefined && expected !== (pass.status === "success")) {
+      console.error(
+        `journal disagrees with the run on ${pass.role}: replayed ${pass.status}, observed ${
+          expected ? "success" : "fail"
+        } — ${pass.reason}`,
+      );
+    }
+  }
 }
 
 async function main(): Promise<void> {
@@ -187,9 +268,11 @@ async function main(): Promise<void> {
   const evidenceDigest = await buildEvidenceDigest(plan, envelopeKey);
   const worktreeBase = await mkdtemp(join(tmpdir(), "review-fanout-"));
   try {
+    const journalPath = join(plan.outputDir, "events.jsonl");
     const results = await runBatched(run, plan.concurrency, (job) =>
-      runJob(plan, job, worktreeBase, evidenceDigest),
+      runJob(plan, job, worktreeBase, evidenceDigest, journalWriter(journalPath, job)),
     );
+    await reportJournal(journalPath, results);
     let failed = 0;
     for (const result of results) {
       if (result.ok) {
