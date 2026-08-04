@@ -138,6 +138,22 @@ describe("buildPrompt", () => {
     const prompt = buildPrompt(job({ mode: "candidate-integration" }), "digest");
     expect(prompt).toContain("candidate-integration scope");
   });
+
+  // validateVerdict rejects on exact equality of these four fields; a prompt
+  // that names the fields without their required literals makes the agent
+  // guess, and a guessed `mode` failed 2/2 real passes on 2026-08-04.
+  test("states the exact literal every cross-checked field must carry", () => {
+    const prompt = buildPrompt(job(), "digest");
+    expect(prompt).toContain('reviewPassId (exactly "rp-1")');
+    expect(prompt).toContain('role (exactly "security")');
+    expect(prompt).toContain('mode (exactly "specialized-role")');
+    expect(prompt).toContain(`commitSha (exactly "${COMMIT}")`);
+  });
+
+  test("candidate-integration prompt pins its own mode literal", () => {
+    const prompt = buildPrompt(job({ mode: "candidate-integration" }), "digest");
+    expect(prompt).toContain('mode (exactly "candidate-integration")');
+  });
 });
 
 describe("extractVerdict", () => {
