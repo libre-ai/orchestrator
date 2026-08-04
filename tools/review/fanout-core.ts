@@ -373,6 +373,7 @@ export interface ReviewEvent {
 }
 
 export interface PassReplay {
+  readonly reviewPassId: string;
   readonly role: string;
   readonly status: "success" | "fail";
   readonly startedAt: string;
@@ -399,9 +400,13 @@ export function replayPassStatuses(events: readonly ReviewEvent[]): PassReplay[]
     const first = passEvents[0] as ReviewEvent;
     const has = (type: ReviewEventType) => passEvents.some((event) => event.type === type);
     const end = passEvents.find((event) => event.type === "pass_end");
-    // Earned, not assumed: both the verdict and the closing event are required,
-    // so a journal that stops mid-pass reconstructs as a failure.
-    const status = has("verdict_recorded") && end !== undefined ? "success" : "fail";
+    // Earned, not assumed: the verdict, the closing event AND that event's own
+    // ok are all required. verdict_recorded lands before worktree cleanup, so
+    // a cleanup or emission failure closes the pass with ok=false — a journal
+    // that certified such a pass would outrank the run that refused it
+    // (2026-08-04 retro-K4 architecture finding). A missing ok fails closed.
+    const closedOk = end?.detail?.ok === true;
+    const status = has("verdict_recorded") && closedOk ? "success" : "fail";
     const reason =
       status === "success"
         ? "verdict recorded and pass closed"
@@ -414,10 +419,13 @@ export function replayPassStatuses(events: readonly ReviewEvent[]): PassReplay[]
               // and saying "produced no verdict" of it would be false.
               end === undefined
               ? "pass never closed — interrupted or still running"
-              : has("agent_call")
-                ? "agent ran without producing an accepted verdict"
-                : "pass closed without a verdict";
+              : has("verdict_recorded")
+                ? "pass closed failed after its verdict — cleanup or emission failed"
+                : has("agent_call")
+                  ? "agent ran without producing an accepted verdict"
+                  : "pass closed without a verdict";
     return {
+      reviewPassId: first.reviewPassId,
       role: first.role,
       status,
       startedAt: first.at,
@@ -425,4 +433,70 @@ export function replayPassStatuses(events: readonly ReviewEvent[]): PassReplay[]
       reason,
     };
   });
+}
+
+export interface ReplayDisagreement {
+  readonly reviewPassId: string;
+  readonly role: string;
+  readonly replayed: PassReplay["status"];
+  readonly observedOk: boolean;
+  readonly reason: string;
+}
+
+/**
+ * Compare replayed statuses with what this invocation observed, by identity.
+ *
+ * The journal is append-only across attempts sharing an output directory, so
+ * it legitimately holds passes this invocation never ran. Those are history:
+ * only a pass whose reviewPassId this run generated can contradict this run
+ * (matching by role compared a dead attempt to its retry and manufactured a
+ * disagreement — 2026-08-04 retro-K4 architecture finding).
+ */
+export function reconcileReplay(
+  replay: readonly PassReplay[],
+  observed: ReadonlyMap<string, boolean>,
+): ReplayDisagreement[] {
+  const disagreements: ReplayDisagreement[] = [];
+  for (const pass of replay) {
+    const observedOk = observed.get(pass.reviewPassId);
+    if (observedOk === undefined) continue;
+    if (observedOk !== (pass.status === "success")) {
+      disagreements.push({
+        reviewPassId: pass.reviewPassId,
+        role: pass.role,
+        replayed: pass.status,
+        observedOk,
+        reason: pass.reason,
+      });
+    }
+  }
+  return disagreements;
+}
+
+export interface ParsedJournal {
+  readonly events: ReviewEvent[];
+  readonly corrupted: { readonly line: number; readonly error: string }[];
+}
+
+/**
+ * Parse a JSONL journal, keeping what an interruption left readable.
+ *
+ * A torn final append is exactly what the journal exists to survive; letting
+ * it abort the whole replay poisoned every later run of the same output
+ * directory (2026-08-04 retro-K4 architecture finding). Corruption is
+ * reported line by line, never silently dropped — and never fatal.
+ */
+export function parseJournalLines(text: string): ParsedJournal {
+  const events: ReviewEvent[] = [];
+  const corrupted: { line: number; error: string }[] = [];
+  const lines = text.split("\n");
+  for (const [index, raw] of lines.entries()) {
+    if (raw.trim().length === 0) continue;
+    try {
+      events.push(JSON.parse(raw) as ReviewEvent);
+    } catch (cause) {
+      corrupted.push({ line: index + 1, error: String(cause) });
+    }
+  }
+  return { events, corrupted };
 }

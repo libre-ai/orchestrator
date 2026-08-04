@@ -7,10 +7,13 @@ import {
   dedupeJobs,
   extractVerdict,
   guardEvidence,
+  type PassReplay,
+  parseJournalLines,
   parsePlan,
   type ReviewEvent,
   type ReviewEventType,
   type ReviewJob,
+  reconcileReplay,
   replayPassStatuses,
   runBatched,
   validateVerdict,
@@ -308,7 +311,8 @@ describe("replayPassStatuses", () => {
     role: string,
     type: ReviewEventType,
     at: string,
-  ): ReviewEvent => ({ reviewPassId, role, type, at });
+    detail?: Record<string, unknown>,
+  ): ReviewEvent => ({ reviewPassId, role, type, at, ...(detail ? { detail } : {}) });
 
   test("a complete pass replays as success", () => {
     const replay = replayPassStatuses([
@@ -317,11 +321,12 @@ describe("replayPassStatuses", () => {
       event("rp-1", "security", "agent_call", "2026-08-04T10:00:02.000Z"),
       event("rp-1", "security", "verdict_recorded", "2026-08-04T10:04:00.000Z"),
       event("rp-1", "security", "worktree_removed", "2026-08-04T10:04:01.000Z"),
-      event("rp-1", "security", "pass_end", "2026-08-04T10:04:02.000Z"),
+      event("rp-1", "security", "pass_end", "2026-08-04T10:04:02.000Z", { ok: true }),
     ]);
 
     expect(replay).toEqual([
       {
+        reviewPassId: "rp-1",
         role: "security",
         status: "success",
         startedAt: "2026-08-04T10:00:00.000Z",
@@ -329,6 +334,32 @@ describe("replayPassStatuses", () => {
         reason: "verdict recorded and pass closed",
       },
     ]);
+  });
+
+  // 2026-08-04 retro-K4 architecture finding: verdict_recorded lands before
+  // worktree cleanup, so a cleanup failure closes the pass with ok=false while
+  // the old replay still certified it. The closing event's own ok is the
+  // record of note; a pass_end that does not carry ok=true never replays green.
+  test("a recorded verdict does not outrank a failed closing event", () => {
+    const replay = replayPassStatuses([
+      event("rp-6", "security", "pass_start", "2026-08-04T10:00:00.000Z"),
+      event("rp-6", "security", "agent_call", "2026-08-04T10:00:02.000Z"),
+      event("rp-6", "security", "verdict_recorded", "2026-08-04T10:03:00.000Z"),
+      event("rp-6", "security", "pass_end", "2026-08-04T10:03:05.000Z", { ok: false }),
+    ]);
+
+    expect(replay[0]?.status).toBe("fail");
+    expect(replay[0]?.reason).toContain("closed failed after its verdict");
+  });
+
+  test("a closing event without an ok detail fails closed", () => {
+    const replay = replayPassStatuses([
+      event("rp-7", "security", "pass_start", "2026-08-04T10:00:00.000Z"),
+      event("rp-7", "security", "verdict_recorded", "2026-08-04T10:03:00.000Z"),
+      event("rp-7", "security", "pass_end", "2026-08-04T10:03:05.000Z"),
+    ]);
+
+    expect(replay[0]?.status).toBe("fail");
   });
 
   test("an interrupted journal replays as failure, never as a green pass", () => {
@@ -381,5 +412,86 @@ describe("replayPassStatuses", () => {
 
     expect(replay.map((pass) => pass.role)).toEqual(["security", "architecture"]);
     expect(replay.every((pass) => pass.status === "fail")).toBe(true);
+  });
+});
+
+describe("reconcileReplay", () => {
+  const pass = (reviewPassId: string, role: string, status: "success" | "fail"): PassReplay => ({
+    reviewPassId,
+    role,
+    status,
+    startedAt: "2026-08-04T10:00:00.000Z",
+    endedAt: "2026-08-04T10:04:00.000Z",
+    reason: status === "success" ? "verdict recorded and pass closed" : "agent failed",
+  });
+
+  test("an agreeing pass produces no disagreement", () => {
+    const disagreements = reconcileReplay(
+      [pass("rp-1", "security", "success")],
+      new Map([["rp-1", true]]),
+    );
+    expect(disagreements).toEqual([]);
+  });
+
+  test("a replayed status contradicting the observed one is named", () => {
+    const disagreements = reconcileReplay(
+      [pass("rp-1", "security", "fail")],
+      new Map([["rp-1", true]]),
+    );
+    expect(disagreements).toHaveLength(1);
+    expect(disagreements[0]?.reviewPassId).toBe("rp-1");
+    expect(disagreements[0]?.role).toBe("security");
+  });
+
+  // 2026-08-04 retro-K4 architecture finding: the journal is append-only
+  // across attempts, and the old reconciliation matched by role — so a failed
+  // attempt in the same output directory compared against the retry's result
+  // and reported a false disagreement. Identity is the reviewPassId; passes
+  // outside this invocation's observed set are history, not contradiction.
+  test("a historical pass of the same role is never compared to this run", () => {
+    const disagreements = reconcileReplay(
+      [pass("rp-old", "security", "fail"), pass("rp-new", "security", "success")],
+      new Map([["rp-new", true]]),
+    );
+    expect(disagreements).toEqual([]);
+  });
+});
+
+describe("parseJournalLines", () => {
+  const line = (reviewPassId: string, type: string) =>
+    JSON.stringify({ reviewPassId, role: "security", type, at: "2026-08-04T10:00:00.000Z" });
+
+  test("parses every well-formed line and reports none corrupted", () => {
+    const { events, corrupted } = parseJournalLines(
+      [line("rp-1", "pass_start"), "", line("rp-1", "pass_end")].join("\n"),
+    );
+    expect(events).toHaveLength(2);
+    expect(corrupted).toEqual([]);
+  });
+
+  // 2026-08-04 retro-K4 architecture finding: a torn final append — exactly
+  // what an interruption leaves behind — aborted the whole replay with an
+  // uncaught JSON.parse, poisoning every later run of the same output
+  // directory. Corruption is reported loudly, line by line, and the readable
+  // remainder still replays.
+  test("a torn trailing record is reported and does not abort the readable lines", () => {
+    const { events, corrupted } = parseJournalLines(
+      [line("rp-1", "pass_start"), line("rp-1", "pass_end"), '{"reviewPassId":"rp-1","ty'].join(
+        "\n",
+      ),
+    );
+    expect(events).toHaveLength(2);
+    expect(corrupted).toHaveLength(1);
+    expect(corrupted[0]?.line).toBe(3);
+    expect(corrupted[0]?.error.length).toBeGreaterThan(0);
+  });
+
+  test("a corrupted line in the middle skips only itself", () => {
+    const { events, corrupted } = parseJournalLines(
+      [line("rp-1", "pass_start"), "not json at all", line("rp-1", "pass_end")].join("\n"),
+    );
+    expect(events).toHaveLength(2);
+    expect(corrupted).toHaveLength(1);
+    expect(corrupted[0]?.line).toBe(2);
   });
 });

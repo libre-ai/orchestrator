@@ -10,11 +10,13 @@ import {
   dedupeJobs,
   extractVerdict,
   guardEvidence,
+  parseJournalLines,
   parsePlan,
   type ReviewEvent,
   type ReviewEventType,
   type ReviewJob,
   type ReviewPlan,
+  reconcileReplay,
   replayPassStatuses,
   runBatched,
   validateVerdict,
@@ -190,24 +192,21 @@ async function reportJournal(journalPath: string, results: readonly JobResult[])
     console.error(`journal missing at ${journalPath} — the run produced no replayable trace`);
     return;
   }
-  const events = (await journal.text())
-    .split("\n")
-    .filter((line) => line.trim().length > 0)
-    .map((line) => JSON.parse(line) as ReviewEvent);
+  const { events, corrupted } = parseJournalLines(await journal.text());
+  for (const entry of corrupted) {
+    console.error(`journal line ${entry.line} unreadable (${entry.error}) — kept, not trusted`);
+  }
   const replay = replayPassStatuses(events);
   console.log(`journal ${journalPath} — ${events.length} events across ${replay.length} pass(es)`);
 
   const observed = new Map(results.map((result) => [result.job.reviewPassId, result.ok]));
-  for (const pass of replay) {
-    const match = results.find((result) => result.job.role === pass.role);
-    const expected = match === undefined ? undefined : observed.get(match.job.reviewPassId);
-    if (expected !== undefined && expected !== (pass.status === "success")) {
-      console.error(
-        `journal disagrees with the run on ${pass.role}: replayed ${pass.status}, observed ${
-          expected ? "success" : "fail"
-        } — ${pass.reason}`,
-      );
-    }
+  for (const disagreement of reconcileReplay(replay, observed)) {
+    console.error(
+      `journal disagrees with the run on ${disagreement.role} (${disagreement.reviewPassId}): ` +
+        `replayed ${disagreement.replayed}, observed ${
+          disagreement.observedOk ? "success" : "fail"
+        } — ${disagreement.reason}`,
+    );
   }
 }
 
