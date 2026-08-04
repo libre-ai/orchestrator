@@ -1,4 +1,11 @@
-const CRATE_ROOT = "crates/agent-orchestrator";
+// The crate lives at the repository root since the γ 3.6 migration bootstrap;
+// the WP-G3 workspace conversion will move it under crates/agent-orchestrator,
+// and this constant is the single place that follows it. It was still carrying
+// the hub-era path after the migration, and nothing executed this check — the
+// ADR-0004 §8 boundary had no live guard (found 2026-08-04, wired into
+// `bun run check` the same day).
+const CRATE_ROOT = ".";
+const inCrate = (path: string): string => (CRATE_ROOT === "." ? path : `${CRATE_ROOT}/${path}`);
 const ALLOWED_DEPENDENCIES = new Set([
   "chrono",
   "libre-ai-contract-types",
@@ -88,7 +95,7 @@ function dependencyNames(manifest: string): string[] {
 
 export async function checkAgentOrchestratorCapabilityBoundary(): Promise<string[]> {
   const failures: string[] = [];
-  const manifest = await Bun.file(`${CRATE_ROOT}/Cargo.toml`).text();
+  const manifest = await Bun.file(inCrate("Cargo.toml")).text();
   failures.push(...forbiddenDependencySections(manifest));
   const dependencies = dependencyNames(manifest);
   for (const dependency of dependencies) {
@@ -100,20 +107,16 @@ export async function checkAgentOrchestratorCapabilityBoundary(): Promise<string
     if (!dependencies.includes(required)) failures.push(`dependency-missing:${required}`);
   }
 
-  for (const forbiddenPath of [
-    `${CRATE_ROOT}/build.rs`,
-    `${CRATE_ROOT}/src/main.rs`,
-    `${CRATE_ROOT}/src/bin`,
-  ]) {
+  for (const forbiddenPath of [inCrate("build.rs"), inCrate("src/main.rs"), inCrate("src/bin")]) {
     if (await Bun.file(forbiddenPath).exists())
       failures.push(`runtime-entry-forbidden:${forbiddenPath}`);
   }
 
-  const glob = new Bun.Glob(`${CRATE_ROOT}/src/**/*.rs`);
+  const glob = new Bun.Glob(inCrate("src/**/*.rs"));
   let sourceCount = 0;
   for await (const path of glob.scan({ cwd: ".", onlyFiles: true })) {
     sourceCount += 1;
-    if (path.includes(`${CRATE_ROOT}/src/bin/`)) failures.push(`runtime-entry-forbidden:${path}`);
+    if (path.includes(inCrate("src/bin/"))) failures.push(`runtime-entry-forbidden:${path}`);
     const source = await Bun.file(path).text();
     failures.push(...forbiddenSourceCapabilities(path, source));
   }
