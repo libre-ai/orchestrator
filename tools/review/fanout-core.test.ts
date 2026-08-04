@@ -8,7 +8,10 @@ import {
   extractVerdict,
   guardEvidence,
   parsePlan,
+  type ReviewEvent,
+  type ReviewEventType,
   type ReviewJob,
+  replayPassStatuses,
   runBatched,
   validateVerdict,
 } from "./fanout-core";
@@ -280,5 +283,87 @@ describe("guardEvidence (K3 envelope integration)", () => {
     // to a single ephemeral key, preventing cross-run splice attacks on evidence.
     expect(guarded1).toContain("⟦LAI-UNTRUSTED source=tool-output");
     expect(guarded2).toContain("⟦LAI-UNTRUSTED source=tool-output");
+  });
+});
+
+describe("replayPassStatuses", () => {
+  const event = (
+    reviewPassId: string,
+    role: string,
+    type: ReviewEventType,
+    at: string,
+  ): ReviewEvent => ({ reviewPassId, role, type, at });
+
+  test("a complete pass replays as success", () => {
+    const replay = replayPassStatuses([
+      event("rp-1", "security", "pass_start", "2026-08-04T10:00:00.000Z"),
+      event("rp-1", "security", "worktree_ready", "2026-08-04T10:00:01.000Z"),
+      event("rp-1", "security", "agent_call", "2026-08-04T10:00:02.000Z"),
+      event("rp-1", "security", "verdict_recorded", "2026-08-04T10:04:00.000Z"),
+      event("rp-1", "security", "worktree_removed", "2026-08-04T10:04:01.000Z"),
+      event("rp-1", "security", "pass_end", "2026-08-04T10:04:02.000Z"),
+    ]);
+
+    expect(replay).toEqual([
+      {
+        role: "security",
+        status: "success",
+        startedAt: "2026-08-04T10:00:00.000Z",
+        endedAt: "2026-08-04T10:04:02.000Z",
+        reason: "verdict recorded and pass closed",
+      },
+    ]);
+  });
+
+  test("an interrupted journal replays as failure, never as a green pass", () => {
+    const replay = replayPassStatuses([
+      event("rp-2", "architecture", "pass_start", "2026-08-04T10:00:00.000Z"),
+      event("rp-2", "architecture", "agent_call", "2026-08-04T10:00:02.000Z"),
+      event("rp-2", "architecture", "verdict_recorded", "2026-08-04T10:03:00.000Z"),
+    ]);
+
+    expect(replay[0]?.status).toBe("fail");
+    expect(replay[0]?.endedAt).toBeNull();
+    expect(replay[0]?.reason).toContain("never closed");
+  });
+
+  test("a reviewer that wrote to the tree is named as such", () => {
+    const replay = replayPassStatuses([
+      event("rp-3", "security", "pass_start", "2026-08-04T10:00:00.000Z"),
+      event("rp-3", "security", "agent_call", "2026-08-04T10:00:02.000Z"),
+      event("rp-3", "security", "worktree_dirty", "2026-08-04T10:03:00.000Z"),
+      event("rp-3", "security", "pass_end", "2026-08-04T10:03:01.000Z"),
+    ]);
+
+    expect(replay[0]?.status).toBe("fail");
+    expect(replay[0]?.reason).toContain("worktree dirty");
+  });
+
+  test("a rejected verdict is distinguished from an absent one", () => {
+    const rejected = replayPassStatuses([
+      event("rp-4", "security", "pass_start", "2026-08-04T10:00:00.000Z"),
+      event("rp-4", "security", "agent_call", "2026-08-04T10:00:02.000Z"),
+      event("rp-4", "security", "verdict_rejected", "2026-08-04T10:03:00.000Z"),
+      event("rp-4", "security", "pass_end", "2026-08-04T10:03:01.000Z"),
+    ]);
+    const absent = replayPassStatuses([
+      event("rp-5", "security", "pass_start", "2026-08-04T10:00:00.000Z"),
+      event("rp-5", "security", "agent_call", "2026-08-04T10:00:02.000Z"),
+      event("rp-5", "security", "pass_end", "2026-08-04T10:03:01.000Z"),
+    ]);
+
+    expect(rejected[0]?.reason).toContain("rejected by validation");
+    expect(absent[0]?.reason).toContain("without producing an accepted verdict");
+  });
+
+  test("passes are grouped by review pass id, in first-seen order", () => {
+    const replay = replayPassStatuses([
+      event("rp-a", "security", "pass_start", "2026-08-04T10:00:00.000Z"),
+      event("rp-b", "architecture", "pass_start", "2026-08-04T10:00:00.500Z"),
+      event("rp-a", "security", "pass_end", "2026-08-04T10:04:00.000Z"),
+    ]);
+
+    expect(replay.map((pass) => pass.role)).toEqual(["security", "architecture"]);
+    expect(replay.every((pass) => pass.status === "fail")).toBe(true);
   });
 });
