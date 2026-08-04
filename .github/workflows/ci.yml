@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   licensing:
-    uses: libre-ai/governance/.github/workflows/reusable-licensing.yml@4fd6e18346672189d3053e07c196c77d127e608d
+    uses: libre-ai/governance/.github/workflows/reusable-licensing.yml@7eaa13d4adecb1e765989ef4736d73064548e798
     with:
       tooling_ref: 4fd6e18346672189d3053e07c196c77d127e608d
   bun-quality:
