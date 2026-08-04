@@ -8,7 +8,7 @@
     "bun": ">=1.4.0"
   },
   "overrides": {
-    "fast-uri": "4.1.1"
+    "fast-uri": "4.1.2"
   },
   "devDependencies": {
     "@libre-ai/governance": "github:libre-ai/governance#4fd6e18346672189d3053e07c196c77d127e608d",
