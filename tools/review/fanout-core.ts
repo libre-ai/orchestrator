@@ -235,7 +235,11 @@ export function buildPrompt(job: ReviewJob, evidenceDigest: string): string {
     evidenceDigest,
     "",
     "Deliverable: end your reply with exactly one fenced ```json block containing the verdict envelope with fields:",
-    "reviewPassId, role, mode, commitSha, contractHashes ([{path, sha256}]), commands (the commands you actually ran),",
+    // The runner rejects on exact equality of these four fields; the prompt
+    // states each required literal so nothing is left to be guessed (a guessed
+    // `mode` failed 2/2 real passes on 2026-08-04).
+    `reviewPassId (exactly "${job.reviewPassId}"), role (exactly "${job.role}"), mode (exactly "${job.mode}"), commitSha (exactly "${job.commit}"),`,
+    "contractHashes ([{path, sha256}]), commands (the commands you actually ran),",
     "findings ({blocking, major, minor, nonBlocking}: arrays of {title, detail}), residualRisks (string array),",
     'verdict ("approve" | "approve-with-minor-reservations" | "reject").',
     "One verdict exactly; a generic pass cannot satisfy a specialized role.",
