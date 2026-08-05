@@ -16,6 +16,8 @@ pub struct HarnessProfile {
     supported_platforms: Vec<String>,
     max_bytes_per_tool: u64,
     max_total_bytes: u64,
+    worker_transport_kind: String,
+    required_capabilities: Vec<String>,
     declared_digest: String,
 }
 
@@ -26,6 +28,8 @@ struct ProfileWire {
     version: String,
     supported_platforms: Vec<String>,
     outputs: OutputsWire,
+    worker_transport: WorkerTransportWire,
+    sandbox_engine: SandboxEngineWire,
     profile_digest: String,
 }
 
@@ -36,6 +40,18 @@ struct OutputsWire {
     max_total_bytes: u64,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkerTransportWire {
+    kind: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SandboxEngineWire {
+    required_capabilities: Vec<String>,
+}
+
 impl From<ProfileWire> for HarnessProfile {
     fn from(wire: ProfileWire) -> Self {
         Self {
@@ -44,6 +60,8 @@ impl From<ProfileWire> for HarnessProfile {
             supported_platforms: wire.supported_platforms,
             max_bytes_per_tool: wire.outputs.max_bytes_per_tool,
             max_total_bytes: wire.outputs.max_total_bytes,
+            worker_transport_kind: wire.worker_transport.kind,
+            required_capabilities: wire.sandbox_engine.required_capabilities,
             declared_digest: wire.profile_digest,
         }
     }
@@ -73,6 +91,16 @@ impl HarnessProfile {
     #[must_use]
     pub const fn max_total_bytes(&self) -> u64 {
         self.max_total_bytes
+    }
+
+    #[must_use]
+    pub fn worker_transport_kind(&self) -> &str {
+        &self.worker_transport_kind
+    }
+
+    #[must_use]
+    pub fn required_capabilities(&self) -> &[String] {
+        &self.required_capabilities
     }
 }
 

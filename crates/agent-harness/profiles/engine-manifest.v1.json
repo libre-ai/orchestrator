@@ -1,0 +1,12 @@
+{
+  "name": "libre-ai-agent-harness-host-engine",
+  "version": "0.1.0",
+  "capabilities": [
+    "filesystem_confinement",
+    "output_bounds",
+    "process_isolation",
+    "resource_limits",
+    "worker_transport_isolation"
+  ],
+  "notes": "The harness host layer is itself the sandbox engine of ADR-0018 D2: local process confinement only — no mounts, no namespaces, no container. Capabilities it cannot provide are refused via denyOnMissing, never approximated."
+}

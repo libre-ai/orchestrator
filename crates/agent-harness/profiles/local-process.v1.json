@@ -1,0 +1,86 @@
+{
+  "schemaVersion": "libre-ai.harness-profile.v1",
+  "id": "urn:libre-ai:profile:local-process-1",
+  "version": "1.0.0",
+  "enforcement": "required",
+  "supportedPlatforms": ["linux-x86_64", "linux-aarch64"],
+  "filesystem": {
+    "workspaceRoot": "/workspace",
+    "canonicalizePaths": true,
+    "resolveSymlinks": true,
+    "symlinkPolicy": "deny-outside-workspace",
+    "readOnly": ["in/**"],
+    "writable": ["out/**"],
+    "denied": [".env", "**/.git/**"],
+    "copyIgnoredFiles": false
+  },
+  "process": {
+    "dedicatedIdentity": true,
+    "denyPrivilegeEscalation": true,
+    "dropAmbientCapabilities": true,
+    "killProcessGroup": true,
+    "maxProcesses": 16,
+    "maxDurationSeconds": 60
+  },
+  "sandboxEngine": {
+    "manifest": {
+      "id": "urn:libre-ai:manifest:agent-harness-host-engine-1",
+      "digest": "380ce5c38a53846e208d27fe4330c5e48bf6654afec35e905b8e043b6334cf0f",
+      "mediaType": "application/json"
+    },
+    "requiredCapabilities": [
+      "filesystem_confinement",
+      "output_bounds",
+      "process_isolation",
+      "resource_limits"
+    ],
+    "denyOnMissing": true
+  },
+  "workerTransport": {
+    "kind": "private-unix-socket",
+    "verifyOsPeer": true,
+    "runBoundToken": true,
+    "hostLoopbackAllowed": false
+  },
+  "providerGateway": {
+    "upstreamSecretInWorker": false,
+    "bindExactOrigins": true,
+    "pinResolvedAddress": true,
+    "revalidateRedirects": true,
+    "denySpecialUseAddresses": true,
+    "allowLoopbackUpstream": false
+  },
+  "privilegedToolBroker": {
+    "secretsInWorker": false,
+    "oneShotCapabilities": true,
+    "revalidatePlan": true,
+    "revalidateBudget": true,
+    "revalidateExpiry": true,
+    "structuredArguments": true,
+    "resolveExecutable": true,
+    "rejectShellSyntax": true,
+    "allowGenericShell": false,
+    "failClosedOutputScan": true
+  },
+  "outputs": {
+    "maxBytesPerTool": 1048576,
+    "maxTotalBytes": 10485760,
+    "privateByDefault": true
+  },
+  "operationalLogs": {
+    "closedCategoriesAndCountersOnly": true,
+    "contentFieldsAllowed": false,
+    "stableBusinessIdentifiersAllowed": false,
+    "externalOtelEnabled": false,
+    "maxRetentionHours": 24,
+    "timestampPrecisionSeconds": 60
+  },
+  "attestation": {
+    "bindRequestedProfile": true,
+    "bindEffectiveControls": true,
+    "bindWorkerManifests": true,
+    "bindKernelCapabilities": true,
+    "signed": true
+  },
+  "profileDigest": "ea8e56cd410eb5256e0d2d5f6a1dc2c7387c128fd8421f661efa27340c58cec0"
+}

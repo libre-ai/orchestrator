@@ -13,9 +13,11 @@
 //! boundary is mechanically enforced by `verification/agent-harness/`.
 
 mod canonical;
+mod controls;
 mod profile;
 mod refusal;
 
+pub use controls::{EffectiveControls, HostFacts, resolve_controls};
 pub use profile::{
     HarnessProfile, ResolvedProfile, parse_profile, profile_digest, resolve_profile,
 };
