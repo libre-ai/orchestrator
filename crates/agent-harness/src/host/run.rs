@@ -4,7 +4,7 @@ use crate::controls::{HostFacts, resolve_controls};
 use crate::host::fs::canonical_workspace;
 use crate::host::process::{SpawnLimits, spawn_confined};
 use crate::outputs::{OutputLedger, OutputScan, admit_scan};
-use crate::profile::resolve_profile;
+use crate::profile::{effective_profile_digest, resolve_profile};
 use crate::refusal::HarnessRefusal;
 use libre_ai_contract_types::ContractRegistry;
 use serde_json::Value;
@@ -148,6 +148,10 @@ pub fn run_confined_attested(
     // The const-locked process block is applied in full by the chain, or
     // the run is refused before the worker exists.
     let chain = plan_wrapper_chain(&profile.process(), &plan)?;
+    // What the run enforces, not what it was asked for: the two digests are
+    // distinct fields precisely so a narrower confinement cannot pass for an
+    // honoured one (K4 rounds 1 and 2).
+    let effective_digest = effective_profile_digest(profile_document)?;
     let outcome = spawn_confined(program, args, payload, &workspace, &limits, &plan, &chain)?;
 
     // KNOWN LIMIT (xhigh review of f27b3c9): this ledger lives for one spawn
@@ -176,7 +180,7 @@ pub fn run_confined_attested(
         &identity.run_id,
         &identity.plan_digest,
         resolved.digest(),
-        resolved.digest(),
+        &effective_digest,
         vec![worker_manifest_digest],
         engine_manifest,
         PLATFORM,

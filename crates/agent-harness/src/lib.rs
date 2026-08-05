@@ -36,6 +36,7 @@ pub use controls::{EffectiveControls, HostFacts, resolve_controls};
 pub use fs_policy::{PathAccess, PathAccessKind, evaluate_path_access};
 pub use outputs::{OutputLedger, OutputScan, admit_scan};
 pub use profile::{
-    HarnessProfile, ResolvedProfile, parse_profile, profile_digest, resolve_profile,
+    APPLIED_PROFILE_SURFACE, HarnessProfile, ResolvedProfile, effective_profile_digest,
+    parse_profile, profile_digest, resolve_profile,
 };
 pub use refusal::HarnessRefusal;

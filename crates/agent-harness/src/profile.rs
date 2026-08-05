@@ -179,6 +179,56 @@ pub fn profile_digest(document: &Value) -> Result<String, HarnessRefusal> {
     canonical_sha256(&unsigned).ok_or(HarnessRefusal::ProfileUnresolved)
 }
 
+/// The profile surface this engine actually applies, in the order the
+/// projection keeps it. Public because an operator must be able to recompute
+/// the effective digest from the requested profile alone: the projection is a
+/// documented rule, not a secret of the harness.
+///
+/// Absent on purpose, because nothing in this engine acts on them at this
+/// stage: `filesystem` (the worker's own syscalls are bounded by the
+/// dedicated identity's DAC, not by the path sets), `providerGateway`,
+/// `privilegedToolBroker`, `operationalLogs` and `attestation`. Of
+/// `workerTransport` only `kind` survives — `verifyOsPeer` and
+/// `runBoundToken` have no mechanism behind them yet.
+pub const APPLIED_PROFILE_SURFACE: &[&str] = &[
+    "schemaVersion",
+    "id",
+    "version",
+    "enforcement",
+    "supportedPlatforms",
+    "process",
+    "sandboxEngine",
+    "outputs",
+];
+
+/// The content address of what was actually applied.
+///
+/// `requestedProfileDigest` names the profile that was asked for;
+/// `effectiveProfileDigest` must name what the run enforced, so that a
+/// confinement applying less than its profile prescribes stays
+/// distinguishable from one that honoured it (`docs/apps/harness.md`,
+/// domain protocol). Echoing the requested digest made the two identical by
+/// construction and let the attestation assert every inert block of the
+/// document — the defect both K4 rounds named on 5bee6a3 and f27b3c9.
+pub fn effective_profile_digest(document: &Value) -> Result<String, HarnessRefusal> {
+    let mut projected = serde_json::Map::new();
+    for key in APPLIED_PROFILE_SURFACE {
+        if let Some(value) = document.get(*key) {
+            projected.insert((*key).to_owned(), value.clone());
+        }
+    }
+    let kind = document
+        .get("workerTransport")
+        .and_then(|transport| transport.get("kind"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    projected.insert(
+        "workerTransport".to_owned(),
+        Value::Object(serde_json::Map::from_iter([("kind".to_owned(), kind)])),
+    );
+    profile_digest(&Value::Object(projected))
+}
+
 /// Validate against the locked contract, then hold the document to its own
 /// word: the embedded `profileDigest` must match the recomputed content
 /// address — a profile that lies about its digest is refused, not repaired.

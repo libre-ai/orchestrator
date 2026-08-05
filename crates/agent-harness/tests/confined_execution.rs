@@ -96,6 +96,18 @@ fn the_first_confined_execution_is_attested_or_exactly_refused() {
             };
             assert_eq!(attestation["platform"], expected);
             assert_eq!(attestation["networkMode"], "none");
+            // The attestation states a narrower effective profile than the
+            // one requested, because this engine applies less than the
+            // locked contract prescribes.
+            assert_ne!(
+                attestation["requestedProfileDigest"], attestation["effectiveProfileDigest"],
+                "an unapplied block must not travel as effective"
+            );
+            assert_eq!(
+                attestation["effectiveProfileDigest"],
+                libre_ai_agent_harness::effective_profile_digest(&document)
+                    .expect("the applied surface must digest")
+            );
             // The ledger is exact: what the engine applies, and nothing more.
             assert_eq!(
                 attestation["effectiveControls"],
