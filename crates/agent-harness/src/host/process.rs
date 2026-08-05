@@ -1,4 +1,5 @@
 use crate::confinement::{ConfinementPlan, WrapperChain};
+use crate::host::binding::RunBinding;
 use crate::refusal::HarnessRefusal;
 use std::io::{Read, Write};
 use std::os::fd::OwnedFd;
@@ -33,6 +34,7 @@ pub struct ConfinedOutcome {
     truncated: bool,
     timed_out: bool,
     capture_failed: bool,
+    run_binding_proved: bool,
     exit_ok: bool,
 }
 
@@ -50,6 +52,13 @@ impl ConfinedOutcome {
     #[must_use]
     pub const fn timed_out(&self) -> bool {
         self.timed_out
+    }
+
+    /// The response carried this run's token ahead of its content, so it
+    /// belongs to this run and not to another (`runBoundToken`).
+    #[must_use]
+    pub const fn run_binding_proved(&self) -> bool {
+        self.run_binding_proved
     }
 
     /// The capture ended on a transport error rather than on EOF, so the
@@ -71,6 +80,10 @@ impl ConfinedOutcome {
 /// anonymous socketpair is both transport ends created by the harness before
 /// the child exists — `private-unix-socket` with no name to hijack — and the
 /// environment is cleared: nothing of the host reaches the worker.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one parameter per applied control, by design: a bundle would hide which are enforced"
+)]
 pub fn spawn_confined(
     program: &Path,
     args: &[String],
@@ -79,6 +92,7 @@ pub fn spawn_confined(
     limits: &SpawnLimits,
     plan: &ConfinementPlan,
     chain: &WrapperChain,
+    binding: &RunBinding,
 ) -> Result<ConfinedOutcome, HarnessRefusal> {
     let (harness_end, worker_end) =
         UnixStream::pair().map_err(|_| HarnessRefusal::ControlNotEnforceable)?;
@@ -112,7 +126,7 @@ pub fn spawn_confined(
         .try_clone()
         .map_err(|_| HarnessRefusal::ControlNotEnforceable)?;
     sender
-        .write_all(payload)
+        .write_all(&binding.frame(payload))
         .map_err(|_| HarnessRefusal::ControlNotEnforceable)?;
     sender
         .shutdown(std::net::Shutdown::Write)
@@ -162,9 +176,19 @@ pub fn spawn_confined(
         }
     }
 
+    // The frame is transport: it is verified and removed before the output
+    // ever reaches the caller. A response that does not carry the token is
+    // kept as-is and marked unbound rather than silently accepted.
+    let (output, run_binding_proved) = match binding.unframe(&output) {
+        Some(content) => (content, true),
+        None => (output, false),
+    };
+
     let exit_ok = child
         .wait()
-        .map(|status| status.success() && !timed_out && !truncated && !capture_failed)
+        .map(|status| {
+            status.success() && !timed_out && !truncated && !capture_failed && run_binding_proved
+        })
         .unwrap_or(false);
 
     Ok(ConfinedOutcome {
@@ -172,6 +196,7 @@ pub fn spawn_confined(
         truncated,
         timed_out,
         capture_failed,
+        run_binding_proved,
         exit_ok,
     })
 }

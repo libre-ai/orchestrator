@@ -37,12 +37,6 @@ fn the_projection_is_reproducible_from_the_requested_profile_alone() {
             projected.insert((*key).to_owned(), value.clone());
         }
     }
-    // workerTransport keeps only the field the engine acts on.
-    let kind = document["workerTransport"]["kind"].clone();
-    projected.insert(
-        "workerTransport".to_owned(),
-        serde_json::json!({ "kind": kind }),
-    );
     let recomputed = profile_digest(&Value::Object(projected)).expect("the projection must digest");
     assert_eq!(
         recomputed,

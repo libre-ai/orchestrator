@@ -56,6 +56,7 @@ fn resolves_every_prescribed_control_on_a_fully_equipped_linux_host() {
             "output_bounds".to_owned(),
             "process_isolation".to_owned(),
             "resource_limits".to_owned(),
+            "worker_transport_isolation".to_owned(),
         ],
         "the ledger lists what is enforced, and filesystem_confinement is not"
     );

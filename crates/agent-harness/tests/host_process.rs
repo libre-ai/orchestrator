@@ -1,6 +1,6 @@
 use libre_ai_agent_harness::{
-    ConfinementPlan, ProcessPrescription, SpawnLimits, WrapperChain, plan_wrapper_chain,
-    spawn_confined,
+    ConfinementPlan, ProcessPrescription, RunBinding, SpawnLimits, WrapperChain,
+    plan_wrapper_chain, spawn_confined,
 };
 use std::path::Path;
 use std::time::Duration;
@@ -30,6 +30,7 @@ fn the_payload_travels_the_private_pair_and_comes_back_bound_to_the_run() {
         &limits(4_096, 5_000),
         &ConfinementPlan::unprivileged(),
         &bare_chain(),
+        &RunBinding::fresh().expect("the host must provide entropy"),
     )
     .expect("a cat worker echoes the payload");
     assert!(outcome.exit_ok());
@@ -47,6 +48,7 @@ fn a_worker_flooding_its_output_is_truncated_and_marked() {
         &limits(1_000, 5_000),
         &ConfinementPlan::unprivileged(),
         &bare_chain(),
+        &RunBinding::fresh().expect("the host must provide entropy"),
     )
     .expect("the flooding worker still runs");
     assert!(outcome.truncated(), "the capture must stop at its bound");
@@ -63,6 +65,7 @@ fn the_worker_inherits_no_environment() {
         &limits(4_096, 5_000),
         &ConfinementPlan::unprivileged(),
         &bare_chain(),
+        &RunBinding::fresh().expect("the host must provide entropy"),
     )
     .expect("the env worker runs");
     let printed = String::from_utf8_lossy(outcome.output()).to_string();
@@ -82,6 +85,7 @@ fn a_worker_outliving_its_duration_bound_is_killed() {
         &limits(4_096, 300),
         &ConfinementPlan::unprivileged(),
         &bare_chain(),
+        &RunBinding::fresh().expect("the host must provide entropy"),
     )
     .expect("the sleeping worker is reaped");
     assert!(outcome.timed_out(), "the duration bound must kill the run");

@@ -63,6 +63,23 @@ describe("WP-G3-H01 harness capability boundary", () => {
   // xhigh review of f27b3c9: the exemption was a substring test, so a
   // trailing comment bought real unsafe a pass, and prose containing the
   // word failed the gate.
+  // The `verifyOsPeer` argument by construction is only as good as the ban
+  // that keeps a named socket out of the crate.
+  test.each([
+    "UnixListener::bind(path)",
+    'listener.bind("/tmp/s")',
+  ])("a named socket is refused even inside src/host: %s", (source) => {
+    expect(
+      forbiddenEverywhere("crates/agent-harness/src/host/process.rs", source).length,
+    ).toBeGreaterThan(0);
+  });
+
+  test("the anonymous pair the harness actually uses stays allowed", () => {
+    expect(
+      forbiddenEverywhere("crates/agent-harness/src/host/process.rs", "UnixStream::pair()"),
+    ).toEqual([]);
+  });
+
   test("real unsafe cannot buy an exemption with a comment", () => {
     expect(
       forbiddenEverywhere(

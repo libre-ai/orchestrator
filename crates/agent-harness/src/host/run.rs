@@ -1,6 +1,7 @@
 use crate::attestation::{ArtifactRef, AttestationInputs, sign_attestation};
 use crate::confinement::{ConfinementPlan, plan_wrapper_chain};
 use crate::controls::{HostFacts, resolve_controls};
+use crate::host::binding::RunBinding;
 use crate::host::fs::canonical_workspace;
 use crate::host::process::{SpawnLimits, spawn_confined};
 use crate::outputs::{OutputLedger, OutputScan, admit_scan};
@@ -21,6 +22,8 @@ use std::time::Duration;
 pub enum RunError {
     Refused(HarnessRefusal),
     WorkerFault,
+    /// The response carried no proof it belongs to this run.
+    RunBindingUnproved,
 }
 
 impl From<HarnessRefusal> for RunError {
@@ -152,7 +155,12 @@ pub fn run_confined_attested(
     // distinct fields precisely so a narrower confinement cannot pass for an
     // honoured one (K4 rounds 1 and 2).
     let effective_digest = effective_profile_digest(profile_document)?;
-    let outcome = spawn_confined(program, args, payload, &workspace, &limits, &plan, &chain)?;
+    // The run's own token: the response must carry it, or it is not this
+    // run's response (`runBoundToken`, const true in the locked profile).
+    let binding = RunBinding::fresh()?;
+    let outcome = spawn_confined(
+        program, args, payload, &workspace, &limits, &plan, &chain, &binding,
+    )?;
 
     // KNOWN LIMIT (xhigh review of f27b3c9): this ledger lives for one spawn
     // and receives one admit, so maxTotalBytes only ever meets a value the
@@ -169,6 +177,12 @@ pub fn run_confined_attested(
     } else {
         OutputScan::Complete
     })?;
+    if !outcome.run_binding_proved() {
+        // The worker ran inside honoured controls but its answer is not bound
+        // to this run: a distinct outcome from a worker that simply failed,
+        // and not a confinement refusal either.
+        return Err(RunError::RunBindingUnproved);
+    }
     if !outcome.exit_ok() {
         return Err(RunError::WorkerFault);
     }

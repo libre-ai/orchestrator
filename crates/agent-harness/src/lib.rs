@@ -23,8 +23,8 @@ mod profile;
 mod refusal;
 
 pub use host::{
-    ConfinedOutcome, RunError, RunIdentity, SpawnLimits, WorkspaceObserver, canonical_workspace,
-    run_confined_attested, spawn_confined,
+    ConfinedOutcome, RunBinding, RunError, RunIdentity, SpawnLimits, WorkspaceObserver,
+    canonical_workspace, run_confined_attested, spawn_confined,
 };
 
 pub use attestation::{

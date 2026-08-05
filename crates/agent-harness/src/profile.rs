@@ -188,8 +188,11 @@ pub fn profile_digest(document: &Value) -> Result<String, HarnessRefusal> {
 /// stage: `filesystem` (the worker's own syscalls are bounded by the
 /// dedicated identity's DAC, not by the path sets), `providerGateway`,
 /// `privilegedToolBroker`, `operationalLogs` and `attestation`. Of
-/// `workerTransport` only `kind` survives — `verifyOsPeer` and
-/// `runBoundToken` have no mechanism behind them yet.
+/// `workerTransport` the whole block survives: `kind` selects the mechanism,
+/// `runBoundToken` is a per-run token the response must return, and
+/// `verifyOsPeer` holds by construction — the transport is an anonymous pair
+/// handed to exactly one child, and the capability guard keeps every named
+/// socket out of the crate so no other peer can exist.
 pub const APPLIED_PROFILE_SURFACE: &[&str] = &[
     "schemaVersion",
     "id",
@@ -199,6 +202,7 @@ pub const APPLIED_PROFILE_SURFACE: &[&str] = &[
     "process",
     "sandboxEngine",
     "outputs",
+    "workerTransport",
 ];
 
 /// The content address of what was actually applied.
@@ -217,15 +221,6 @@ pub fn effective_profile_digest(document: &Value) -> Result<String, HarnessRefus
             projected.insert((*key).to_owned(), value.clone());
         }
     }
-    let kind = document
-        .get("workerTransport")
-        .and_then(|transport| transport.get("kind"))
-        .cloned()
-        .unwrap_or(Value::Null);
-    projected.insert(
-        "workerTransport".to_owned(),
-        Value::Object(serde_json::Map::from_iter([("kind".to_owned(), kind)])),
-    );
     profile_digest(&Value::Object(projected))
 }
 

@@ -26,6 +26,15 @@ const FORBIDDEN_EVERYWHERE = [
   "std::net::Tcp",
   "std::net::Udp",
   "std::env",
+  // `verifyOsPeer` is const true in the locked profile and this engine has no
+  // libc to read peer credentials with. It is applied by construction
+  // instead: the transport is an anonymous socketpair created before the
+  // child exists and handed to exactly one child, so no third party can be
+  // the peer. That argument only holds while no NAMED socket can exist in the
+  // crate — which is what these bans make true rather than asserted.
+  "UnixListener",
+  "bind(",
+  ".bind_addr",
   "tokio::",
   "reqwest::",
   "hyper::",
@@ -50,7 +59,6 @@ const FORBIDDEN_OUTSIDE_HOST = [
   "Command::new",
   "OpenOptions",
   "UnixStream",
-  "UnixListener",
 ];
 
 // Rust paths are whitespace-insensitive, so a literal substring ban is evaded
