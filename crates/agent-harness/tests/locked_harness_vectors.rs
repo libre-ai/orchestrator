@@ -69,11 +69,11 @@ fn the_locked_harness_attestation_signature_verifies_and_a_flipped_one_does_not(
 
     let mut tampered = signed.clone();
     let original = entry["signature"].as_str().expect("signature is a string");
-    let flipped = if original.starts_with('A') {
-        format!("B{}", &original[1..])
-    } else {
-        format!("A{}", &original[1..])
-    };
+    let head = if original.starts_with('A') { "B" } else { "A" };
+    let tail = original
+        .get(1..)
+        .expect("the locked signature is 86 characters long");
+    let flipped = format!("{head}{tail}");
     tampered["signature"] = Value::String(flipped);
     let refusal = verify_attestation(&registry, &tampered, public_key)
         .expect_err("a flipped signature must not verify");
