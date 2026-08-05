@@ -19,9 +19,13 @@ const ALLOWED_DEPENDENCIES = new Set([
   "sha2",
 ]);
 
-// Closed by ADR-0018 D2 — banned in every module, host included.
+// Closed by ADR-0018 D2 — banned in every module, host included. The network
+// ban names the socket TYPES rather than the std::net module: UnixStream's
+// own shutdown mode (std::net::Shutdown) lives there without being a network
+// capability, and the types are what actually open one.
 const FORBIDDEN_EVERYWHERE = [
-  "std::net",
+  "std::net::Tcp",
+  "std::net::Udp",
   "std::env",
   "tokio::",
   "reqwest::",
