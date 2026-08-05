@@ -20,3 +20,7 @@ sha2 = { version = "=0.11.0", default-features = false }
 
 [workspace]
 members = ["crates/agent-harness"]
+# A root package makes bare `cargo test` run the root alone; every gate must
+# see every member, silently green-by-omission being the one failure mode a
+# guarded workspace cannot afford.
+default-members = [".", "crates/agent-harness"]
