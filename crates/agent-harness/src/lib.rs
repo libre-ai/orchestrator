@@ -1,0 +1,13 @@
+#![forbid(unsafe_code)]
+
+//! Attested execution confinement (WP-G3-H01, ADR-0018 D2).
+//!
+//! The harness takes a requested profile, applies the controls that profile
+//! prescribes, runs the work inside them, and emits a signed attestation
+//! binding what was asked to what was actually enforced. Its value is not
+//! that it restricts — it is that it proves it restricted
+//! (`docs/apps/harness.md`).
+//!
+//! Everything outside `host` is pure and hostless; `host` holds exactly one
+//! OS capability at this stage — spawning a confined local process. The
+//! boundary is mechanically enforced by `verification/agent-harness/`.

@@ -1,0 +1,158 @@
+// WP-G3-H01 capability boundary of the agent-harness crate (ADR-0018 D2).
+//
+// The harness frontier is NOT the simulation-only frontier of the control
+// core: the harness legitimately holds exactly one OS capability — spawning
+// and confining a local process — and that capability lives in src/host/
+// alone. Everything else stays pure and hostless. What ADR-0018 D2 keeps
+// closed at this stage is banned EVERYWHERE, host module included: outbound
+// network, secrets (the environment), async runtimes.
+const CRATE_ROOT = "crates/agent-harness";
+const HOST_PREFIX = `${CRATE_ROOT}/src/host/`;
+
+const ALLOWED_DEPENDENCIES = new Set([
+  "chrono",
+  "ed25519-dalek",
+  "libre-ai-contract-types",
+  "serde",
+  "serde_jcs",
+  "serde_json",
+  "sha2",
+]);
+
+// Closed by ADR-0018 D2 — banned in every module, host included.
+const FORBIDDEN_EVERYWHERE = [
+  "std::net",
+  "std::env",
+  "tokio::",
+  "reqwest::",
+  "hyper::",
+  "TcpStream",
+  "TcpListener",
+  "UdpSocket",
+];
+
+// Host capabilities: legitimate under src/host/ only. A pure module that
+// touches one of these has crossed the runtime boundary of the harness
+// specification (docs/apps/harness.md, "Runtime boundaries").
+const FORBIDDEN_OUTSIDE_HOST = [
+  "std::process",
+  "std::fs",
+  "std::os::unix::net",
+  "std::thread",
+  "std::time",
+  "Utc::now",
+  "Local::now",
+  "SystemTime",
+  "Instant::now",
+  "Command::new",
+  "OpenOptions",
+  "UnixStream",
+  "UnixListener",
+];
+
+const FORBIDDEN_SOURCE_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
+  ["std-alias", /\b(?:use|extern\s+crate)\s+std\s+as\b/u],
+  ["ffi", /\bextern\s*"C"/u],
+];
+
+export function forbiddenEverywhere(path: string, source: string): string[] {
+  const failures: string[] = [];
+  for (const forbidden of FORBIDDEN_EVERYWHERE) {
+    if (source.includes(forbidden)) failures.push(`capability-forbidden:${path}:${forbidden}`);
+  }
+  for (const [label, pattern] of FORBIDDEN_SOURCE_PATTERNS) {
+    if (pattern.test(source)) failures.push(`capability-forbidden:${path}:${label}`);
+  }
+  const executableUnsafe = source
+    .split("\n")
+    .some((line) => !line.includes("forbid(unsafe_code)") && /\bunsafe\b/.test(line));
+  if (executableUnsafe) failures.push(`unsafe-forbidden:${path}`);
+  return failures;
+}
+
+export function forbiddenOutsideHost(path: string, source: string): string[] {
+  if (path.startsWith(HOST_PREFIX)) return [];
+  const failures: string[] = [];
+  for (const forbidden of FORBIDDEN_OUTSIDE_HOST) {
+    if (source.includes(forbidden))
+      failures.push(`host-capability-outside-host:${path}:${forbidden}`);
+  }
+  return failures;
+}
+
+export function forbiddenDependencySections(manifest: string): string[] {
+  const failures: string[] = [];
+  for (const line of manifest.split("\n")) {
+    const section = /^\[([^\]]+)\](?:\s*#.*)?$/.exec(line.trim())?.[1];
+    const alternateDependencySection =
+      section !== undefined &&
+      section !== "dependencies" &&
+      (section.endsWith("dependencies") ||
+        section.startsWith("dependencies.") ||
+        section.includes(".dependencies."));
+    if (alternateDependencySection) failures.push(`dependency-section-forbidden:${section}`);
+  }
+  return failures;
+}
+
+function dependencyNames(manifest: string): string[] {
+  const names: string[] = [];
+  let inDependencies = false;
+  for (const line of manifest.split("\n")) {
+    const section = /^\[([^\]]+)\](?:\s*#.*)?$/.exec(line.trim())?.[1];
+    if (section !== undefined) {
+      inDependencies = section === "dependencies";
+      continue;
+    }
+    if (!inDependencies) continue;
+    const name = /^([a-z0-9_-]+)(?:\.[a-z0-9_-]+)?\s*=/.exec(line.trim())?.[1];
+    if (name !== undefined) names.push(name);
+  }
+  return names;
+}
+
+export async function checkAgentHarnessCapabilityBoundary(): Promise<string[]> {
+  const failures: string[] = [];
+  const manifest = await Bun.file(`${CRATE_ROOT}/Cargo.toml`).text();
+  failures.push(...forbiddenDependencySections(manifest));
+  const dependencies = dependencyNames(manifest);
+  for (const dependency of dependencies) {
+    if (!ALLOWED_DEPENDENCIES.has(dependency)) {
+      failures.push(`dependency-not-allowed:${dependency}`);
+    }
+  }
+  for (const required of ALLOWED_DEPENDENCIES) {
+    if (!dependencies.includes(required)) failures.push(`dependency-missing:${required}`);
+  }
+
+  for (const forbiddenPath of [
+    `${CRATE_ROOT}/build.rs`,
+    `${CRATE_ROOT}/src/main.rs`,
+    `${CRATE_ROOT}/src/bin`,
+  ]) {
+    if (await Bun.file(forbiddenPath).exists())
+      failures.push(`runtime-entry-forbidden:${forbiddenPath}`);
+  }
+
+  const glob = new Bun.Glob(`${CRATE_ROOT}/src/**/*.rs`);
+  let sourceCount = 0;
+  for await (const path of glob.scan({ cwd: ".", onlyFiles: true })) {
+    sourceCount += 1;
+    const source = await Bun.file(path).text();
+    failures.push(...forbiddenEverywhere(path, source));
+    failures.push(...forbiddenOutsideHost(path, source));
+  }
+  if (sourceCount === 0) failures.push("runtime-source-missing");
+  return failures;
+}
+
+if (import.meta.main) {
+  const failures = await checkAgentHarnessCapabilityBoundary();
+  if (failures.length > 0) {
+    console.error(failures.join("\n"));
+    process.exit(1);
+  }
+  console.log(
+    "Agent harness capability boundary verified: host capability confined to src/host, network and secrets closed",
+  );
+}

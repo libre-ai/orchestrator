@@ -1,10 +1,10 @@
 [package]
-name = "libre-ai-agent-orchestrator"
+name = "libre-ai-agent-harness"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.97"
 license = "EUPL-1.2"
-repository = "https://github.com/libre-ai/libre-ai"
+repository = "https://github.com/libre-ai/orchestrator"
 publish = false
 
 [lib]
@@ -12,11 +12,9 @@ path = "src/lib.rs"
 
 [dependencies]
 chrono = { version = "=0.4.45", default-features = false, features = ["serde", "std"] }
+ed25519-dalek = "=3.0.0"
 libre-ai-contract-types = { version = "=0.1.0", git = "https://github.com/libre-ai/sdk-rs", rev = "02214613c5cb0549d0618484d9b479c4cfb3c7ce" }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_jcs = "=0.2.0"
 serde_json = { version = "=1.0.150", features = ["float_roundtrip"] }
 sha2 = { version = "=0.11.0", default-features = false }
-
-[workspace]
-members = ["crates/agent-harness"]
