@@ -4,8 +4,14 @@ use crate::refusal::HarnessRefusal;
 /// What the local-process engine of ADR-0018 D2 actually provides. Anything a
 /// profile requires beyond this list is denied (`denyOnMissing` is const true
 /// in the locked contract), never approximated.
-const ENGINE_CAPABILITIES: [&str; 5] = [
-    "filesystem_confinement",
+///
+/// `filesystem_confinement` is deliberately absent. Bounding a worker's own
+/// syscalls to the workspace needs chroot or a mount namespace, neither of
+/// which this stage opens; the path-handling machinery holds for accesses the
+/// harness performs, not for the worker's direct ones. Listing it here would
+/// put it in `effectiveControls` and make the attestation claim a boundary
+/// that does not exist (K4 verdicts on 5bee6a3, blocking finding 1).
+const ENGINE_CAPABILITIES: [&str; 4] = [
     "output_bounds",
     "process_isolation",
     "resource_limits",
@@ -56,8 +62,8 @@ const fn capability_enforceable(capability: &str, facts: &HostFacts) -> bool {
     match capability.as_bytes() {
         b"process_isolation" => facts.euid_is_root && facts.setpriv_present,
         b"resource_limits" => facts.setpriv_present,
-        // filesystem_confinement, output_bounds and worker_transport_isolation
-        // are enforced by the harness itself, host privileges regardless.
+        // output_bounds and worker_transport_isolation are enforced by the
+        // harness itself, host privileges regardless.
         _ => true,
     }
 }

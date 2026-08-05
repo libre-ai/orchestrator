@@ -28,7 +28,7 @@ fn run_identity() -> RunIdentity {
 fn engine_manifest() -> ArtifactRef {
     ArtifactRef::new(
         "urn:libre-ai:manifest:agent-harness-host-engine-1",
-        "380ce5c38a53846e208d27fe4330c5e48bf6654afec35e905b8e043b6334cf0f",
+        "db11edba66efd95aaabc4b606afc58f410986747f32c9f38bb5637327aaaaca5",
         "application/json",
     )
 }
@@ -96,6 +96,11 @@ fn the_first_confined_execution_is_attested_or_exactly_refused() {
             };
             assert_eq!(attestation["platform"], expected);
             assert_eq!(attestation["networkMode"], "none");
+            // The ledger is exact: what the engine applies, and nothing more.
+            assert_eq!(
+                attestation["effectiveControls"],
+                serde_json::json!(["output_bounds", "process_isolation", "resource_limits"])
+            );
         } else {
             // Linux without the arranged identity: refused, never degraded.
             assert_eq!(

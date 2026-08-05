@@ -7,6 +7,6 @@ mod fs;
 mod process;
 mod run;
 
-pub use fs::WorkspaceObserver;
+pub use fs::{WorkspaceObserver, canonical_workspace};
 pub use process::{ConfinedOutcome, SpawnLimits, spawn_confined};
 pub use run::{RunError, RunIdentity, run_confined_attested};

@@ -1,7 +1,7 @@
 use crate::attestation::{ArtifactRef, AttestationInputs, sign_attestation};
 use crate::confinement::{ConfinementPlan, plan_wrapper_chain};
 use crate::controls::{HostFacts, resolve_controls};
-use crate::host::fs::WorkspaceObserver;
+use crate::host::fs::canonical_workspace;
 use crate::host::process::{SpawnLimits, spawn_confined};
 use crate::outputs::{OutputLedger, OutputScan, admit_scan};
 use crate::profile::resolve_profile;
@@ -126,7 +126,11 @@ pub fn run_confined_attested(
     let plan = host_plan(dedicated_uid, dedicated_gid);
     let facts = gather_host_facts();
     let effective = resolve_controls(profile, &facts)?;
-    let _observer = WorkspaceObserver::new(workspace_root)?;
+    // The workspace is canonicalized and becomes the worker's starting
+    // directory. It is NOT a boundary: nothing here bounds the worker's own
+    // syscalls, which is precisely why filesystem_confinement is not an engine
+    // capability and never reaches effectiveControls.
+    let workspace = canonical_workspace(workspace_root)?;
 
     let worker_manifest_digest = {
         let bytes = std::fs::read(program).map_err(|_| HarnessRefusal::ControlNotEnforceable)?;
@@ -144,7 +148,7 @@ pub fn run_confined_attested(
     // The const-locked process block is applied in full by the chain, or
     // the run is refused before the worker exists.
     let chain = plan_wrapper_chain(&profile.process(), &plan)?;
-    let outcome = spawn_confined(program, args, payload, &limits, &plan, &chain)?;
+    let outcome = spawn_confined(program, args, payload, &workspace, &limits, &plan, &chain)?;
 
     let mut ledger = OutputLedger::new(profile.max_bytes_per_tool(), profile.max_total_bytes());
     ledger.admit(outcome.output().len() as u64, outcome.truncated())?;

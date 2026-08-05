@@ -53,11 +53,11 @@ fn resolves_every_prescribed_control_on_a_fully_equipped_linux_host() {
     assert_eq!(
         effective.identifiers(),
         &[
-            "filesystem_confinement".to_owned(),
             "output_bounds".to_owned(),
             "process_isolation".to_owned(),
             "resource_limits".to_owned(),
-        ]
+        ],
+        "the ledger lists what is enforced, and filesystem_confinement is not"
     );
 }
 
@@ -82,6 +82,26 @@ fn missing_host_privileges_refuse_rather_than_degrade() {
     let no_setpriv = resolve_controls(&profile, &HostFacts::new("linux-x86_64", true, false))
         .expect_err("resource limits without setpriv are a refusal, never best effort");
     assert_eq!(no_setpriv.code(), "harness.control_not_enforceable");
+}
+
+/// The engine cannot bound a worker's own syscalls without chroot or a mount
+/// namespace, so it does not offer filesystem_confinement: a profile that
+/// requires it is refused, never attested with a boundary that is absent
+/// (K4 verdicts on 5bee6a3, blocking finding 1).
+#[test]
+fn a_profile_requiring_filesystem_confinement_is_refused() {
+    let mut document = canonical_document();
+    document["sandboxEngine"]["requiredCapabilities"] = serde_json::json!([
+        "filesystem_confinement",
+        "output_bounds",
+        "process_isolation",
+        "resource_limits"
+    ]);
+    let profile = parse_profile(&registry(), &with_digest_recomputed(document))
+        .expect("the mutated profile still satisfies the locked schema");
+    let refusal = resolve_controls(&profile, &full_facts())
+        .expect_err("a boundary this engine cannot apply is refused");
+    assert_eq!(refusal.code(), "harness.control_not_enforceable");
 }
 
 #[test]

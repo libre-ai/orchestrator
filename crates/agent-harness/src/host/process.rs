@@ -65,6 +65,7 @@ pub fn spawn_confined(
     program: &Path,
     args: &[String],
     payload: &[u8],
+    workspace: &Path,
     limits: &SpawnLimits,
     plan: &ConfinementPlan,
     chain: &WrapperChain,
@@ -84,6 +85,7 @@ pub fn spawn_confined(
     let mut command = Command::new(head);
     command.args(tail);
     command
+        .current_dir(workspace)
         .env_clear()
         .stdin(Stdio::from(OwnedFd::from(worker_end)))
         .stdout(Stdio::from(OwnedFd::from(worker_stdout)))

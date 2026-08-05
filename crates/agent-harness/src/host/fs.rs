@@ -4,6 +4,14 @@ use crate::refusal::HarnessRefusal;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
+/// Canonicalize a workspace root, refusing what cannot be resolved.
+///
+/// A root that cannot be canonicalized is a filesystem control that cannot be
+/// applied — a refusal, never a best-effort fallback.
+pub fn canonical_workspace(root: &Path) -> Result<PathBuf, HarnessRefusal> {
+    fs::canonicalize(root).map_err(|_| HarnessRefusal::ControlNotEnforceable)
+}
+
 /// Canonicalizes real paths against a real workspace root and produces the
 /// facts the pure policy judges. Journey 2: a path escaping the workspace
 /// root after canonicalization is refused before any process starts.
