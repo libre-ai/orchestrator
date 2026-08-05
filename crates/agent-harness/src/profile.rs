@@ -18,6 +18,9 @@ pub struct HarnessProfile {
     max_total_bytes: u64,
     worker_transport_kind: String,
     required_capabilities: Vec<String>,
+    read_only_paths: Vec<String>,
+    writable_paths: Vec<String>,
+    denied_paths: Vec<String>,
     declared_digest: String,
 }
 
@@ -28,9 +31,18 @@ struct ProfileWire {
     version: String,
     supported_platforms: Vec<String>,
     outputs: OutputsWire,
+    filesystem: FilesystemWire,
     worker_transport: WorkerTransportWire,
     sandbox_engine: SandboxEngineWire,
     profile_digest: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FilesystemWire {
+    read_only: Vec<String>,
+    writable: Vec<String>,
+    denied: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -62,6 +74,9 @@ impl From<ProfileWire> for HarnessProfile {
             max_total_bytes: wire.outputs.max_total_bytes,
             worker_transport_kind: wire.worker_transport.kind,
             required_capabilities: wire.sandbox_engine.required_capabilities,
+            read_only_paths: wire.filesystem.read_only,
+            writable_paths: wire.filesystem.writable,
+            denied_paths: wire.filesystem.denied,
             declared_digest: wire.profile_digest,
         }
     }
@@ -101,6 +116,21 @@ impl HarnessProfile {
     #[must_use]
     pub fn required_capabilities(&self) -> &[String] {
         &self.required_capabilities
+    }
+
+    #[must_use]
+    pub fn read_only_paths(&self) -> &[String] {
+        &self.read_only_paths
+    }
+
+    #[must_use]
+    pub fn writable_paths(&self) -> &[String] {
+        &self.writable_paths
+    }
+
+    #[must_use]
+    pub fn denied_paths(&self) -> &[String] {
+        &self.denied_paths
     }
 }
 
