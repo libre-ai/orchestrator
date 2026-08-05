@@ -21,7 +21,10 @@ mod outputs;
 mod profile;
 mod refusal;
 
-pub use host::{ConfinedOutcome, ConfinementPlan, SpawnLimits, WorkspaceObserver, spawn_confined};
+pub use host::{
+    ConfinedOutcome, ConfinementPlan, RunError, RunIdentity, SpawnLimits, WorkspaceObserver,
+    run_confined_attested, spawn_confined,
+};
 
 pub use attestation::{
     ArtifactRef, AttestationInputs, attestation_digest, public_key_base64url, sign_attestation,

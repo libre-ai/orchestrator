@@ -1,0 +1,111 @@
+use libre_ai_agent_harness::{
+    ArtifactRef, ConfinementPlan, HarnessRefusal, RunError, RunIdentity, profile_digest,
+    public_key_base64url, run_confined_attested, verify_attestation,
+};
+use libre_ai_contract_types::ContractRegistry;
+use serde_json::Value;
+use std::path::Path;
+use std::process::Command;
+
+const CANONICAL_PROFILE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/profiles/local-process.v1.json"
+));
+const PROFILE_ID: &str = "urn:libre-ai:profile:local-process-1";
+const SIGNING_SEED: [u8; 32] = [11; 32];
+
+fn identity() -> RunIdentity {
+    RunIdentity {
+        attestation_id: "urn:libre-ai:attestation:harness-run-e2e-1".to_owned(),
+        tenant_id: "ten_1234567890abcdef".to_owned(),
+        mission_id: "urn:libre-ai:mission:bootstrap-e2e".to_owned(),
+        run_id: "urn:libre-ai:run:bootstrap-e2e-1".to_owned(),
+        plan_digest: "a".repeat(64),
+        signing_key_id: "harness_bootstrap_key_1".to_owned(),
+    }
+}
+
+fn engine_manifest() -> ArtifactRef {
+    ArtifactRef::new(
+        "urn:libre-ai:manifest:agent-harness-host-engine-1",
+        "380ce5c38a53846e208d27fe4330c5e48bf6654afec35e905b8e043b6334cf0f",
+        "application/json",
+    )
+}
+
+/// The dedicated worker identity is arranged by CI (useradd) and looked up
+/// here; a host without it simply has no privileged plan to offer.
+fn privileged_plan() -> Option<ConfinementPlan> {
+    let uid = Command::new("/usr/bin/id")
+        .args(["-u", "harness-worker"])
+        .output()
+        .ok()
+        .filter(|probe| probe.status.success())
+        .and_then(|probe| {
+            String::from_utf8_lossy(&probe.stdout)
+                .trim()
+                .parse::<u32>()
+                .ok()
+        })?;
+    let setpriv = ["/usr/bin/setpriv", "/bin/setpriv"]
+        .into_iter()
+        .find(|candidate| Path::new(candidate).exists())?;
+    Some(ConfinementPlan::privileged(uid, Path::new(setpriv)))
+}
+
+#[test]
+fn the_first_confined_execution_is_attested_or_exactly_refused() {
+    let registry = ContractRegistry::embedded().expect("embedded contracts must compile");
+    let document: Value =
+        serde_json::from_str(CANONICAL_PROFILE).expect("the canonical profile must parse");
+    let digest = profile_digest(&document).expect("the canonical profile must digest");
+
+    let workspace = std::env::temp_dir().join(format!("harness-e2e-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&workspace);
+    std::fs::create_dir_all(workspace.join("out")).expect("the workspace must build");
+
+    let plan = privileged_plan().unwrap_or_else(ConfinementPlan::unprivileged);
+    let result = run_confined_attested(
+        &registry,
+        &document,
+        PROFILE_ID,
+        &digest,
+        &workspace,
+        Path::new("/bin/cat"),
+        &[],
+        b"bootstrap-payload",
+        &plan,
+        engine_manifest(),
+        &identity(),
+        &SIGNING_SEED,
+        "2026-08-05T12:00:00Z",
+    );
+
+    if cfg!(target_os = "linux") {
+        if plan.is_privileged() {
+            // The bootstrap path: a real confined run, attested and
+            // independently verifiable (ADR-0018 D2).
+            let attestation = result.expect("the fully equipped host attests the run");
+            let public_key = public_key_base64url(&SIGNING_SEED);
+            verify_attestation(&registry, &attestation, &public_key)
+                .expect("the attestation verifies without the run that produced it");
+            assert_eq!(attestation["platform"], "linux-x86_64");
+            assert_eq!(attestation["networkMode"], "none");
+        } else {
+            // Linux without the arranged identity: refused, never degraded.
+            assert_eq!(
+                result.expect_err("missing privileges must refuse"),
+                RunError::Refused(HarnessRefusal::ControlNotEnforceable)
+            );
+        }
+    } else {
+        // The canonical increment profile names Linux only: every other
+        // platform is refused before anything starts.
+        assert_eq!(
+            result.expect_err("a platform outside the profile must refuse"),
+            RunError::Refused(HarnessRefusal::PlatformUnsupported)
+        );
+    }
+
+    let _ = std::fs::remove_dir_all(&workspace);
+}

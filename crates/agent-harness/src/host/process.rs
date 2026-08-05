@@ -46,6 +46,11 @@ impl ConfinementPlan {
             setpriv: Some(setpriv.to_path_buf()),
         }
     }
+
+    #[must_use]
+    pub const fn is_privileged(&self) -> bool {
+        self.dedicated_uid.is_some() && self.setpriv.is_some()
+    }
 }
 
 /// What one confined spawn actually did — bounded output, truncation and

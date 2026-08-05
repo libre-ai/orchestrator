@@ -70,6 +70,15 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo test --locked --all-features
+      # WP-G3-H01 bootstrap path: the confined e2e needs the dedicated worker
+      # identity and root (setuid). The runner arranges both; the harness only
+      # ever observes them — a host without them refuses, never degrades.
+      - name: First confined execution, attested (privileged e2e)
+        run: |
+          sudo useradd --system --shell /usr/sbin/nologin harness-worker
+          sudo --preserve-env=PATH,CARGO_HOME,RUSTUP_HOME \
+            "$(command -v cargo)" test --locked -p libre-ai-agent-harness \
+            --test confined_execution -- --nocapture
 
   dependency-policy:
     name: Dependency policy

@@ -16,6 +16,7 @@ pub struct HarnessProfile {
     supported_platforms: Vec<String>,
     max_bytes_per_tool: u64,
     max_total_bytes: u64,
+    max_duration_seconds: u64,
     worker_transport_kind: String,
     required_capabilities: Vec<String>,
     read_only_paths: Vec<String>,
@@ -31,10 +32,17 @@ struct ProfileWire {
     version: String,
     supported_platforms: Vec<String>,
     outputs: OutputsWire,
+    process: ProcessWire,
     filesystem: FilesystemWire,
     worker_transport: WorkerTransportWire,
     sandbox_engine: SandboxEngineWire,
     profile_digest: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProcessWire {
+    max_duration_seconds: u64,
 }
 
 #[derive(Deserialize)]
@@ -72,6 +80,7 @@ impl From<ProfileWire> for HarnessProfile {
             supported_platforms: wire.supported_platforms,
             max_bytes_per_tool: wire.outputs.max_bytes_per_tool,
             max_total_bytes: wire.outputs.max_total_bytes,
+            max_duration_seconds: wire.process.max_duration_seconds,
             worker_transport_kind: wire.worker_transport.kind,
             required_capabilities: wire.sandbox_engine.required_capabilities,
             read_only_paths: wire.filesystem.read_only,
@@ -106,6 +115,11 @@ impl HarnessProfile {
     #[must_use]
     pub const fn max_total_bytes(&self) -> u64 {
         self.max_total_bytes
+    }
+
+    #[must_use]
+    pub const fn max_duration_seconds(&self) -> u64 {
+        self.max_duration_seconds
     }
 
     #[must_use]
