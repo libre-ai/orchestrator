@@ -238,13 +238,13 @@ pub const APPLIED_PROFILE_SURFACE: &[&str] = &[
     // The byte bounds the output ledger enforces.
     "/outputs/maxBytesPerTool",
     "/outputs/maxTotalBytes",
-    // The transport: kind selects the mechanism, the token is required back,
-    // the peer is named by the kernel, and no loopback exists to allow —
-    // the capability guard keeps every network type out of the crate.
+    // The transport: kind selects the mechanism and the token is required
+    // back. verifyOsPeer and hostLoopbackAllowed stay OUT — the first cannot
+    // be applied over an anonymous pair, the second is honoured only by the
+    // absence of any network code, which is the guard's property, not a
+    // control this engine applies.
     "/workerTransport/kind",
     "/workerTransport/runBoundToken",
-    "/workerTransport/verifyOsPeer",
-    "/workerTransport/hostLoopbackAllowed",
     // What the attestation itself binds, which this crate does bind.
     "/attestation/signed",
     "/attestation/bindRequestedProfile",

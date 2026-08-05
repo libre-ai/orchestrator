@@ -102,12 +102,7 @@ fn the_first_confined_execution_is_attested_or_exactly_refused() {
             // The ledger is exact: what the engine applies, and nothing more.
             assert_eq!(
                 attestation["effectiveControls"],
-                serde_json::json!([
-                    "output_bounds",
-                    "process_isolation",
-                    "resource_limits",
-                    "worker_transport_isolation"
-                ])
+                serde_json::json!(["output_bounds", "process_isolation", "resource_limits"])
             );
         } else {
             // Linux without the arranged identity: refused, never degraded.

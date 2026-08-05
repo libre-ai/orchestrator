@@ -29,7 +29,7 @@ fn with_digest_recomputed(mut document: Value) -> Value {
 }
 
 fn full_facts() -> HostFacts {
-    HostFacts::new("linux-x86_64", true, true, true)
+    HostFacts::new("linux-x86_64", true, true)
 }
 
 #[test]
@@ -56,7 +56,6 @@ fn resolves_every_prescribed_control_on_a_fully_equipped_linux_host() {
             "output_bounds".to_owned(),
             "process_isolation".to_owned(),
             "resource_limits".to_owned(),
-            "worker_transport_isolation".to_owned(),
         ],
         "the ledger lists what is enforced, and filesystem_confinement is not"
     );
@@ -66,7 +65,7 @@ fn resolves_every_prescribed_control_on_a_fully_equipped_linux_host() {
 fn a_platform_outside_the_profile_is_refused_before_anything_starts() {
     let profile = parse_profile(&registry(), &canonical_document())
         .expect("the canonical profile must parse");
-    let refusal = resolve_controls(&profile, &HostFacts::new("macos-aarch64", true, true, true))
+    let refusal = resolve_controls(&profile, &HostFacts::new("macos-aarch64", true, true))
         .expect_err("macOS is not in the canonical profile");
     assert_eq!(refusal.code(), "harness.platform_unsupported");
 }
@@ -76,12 +75,11 @@ fn missing_host_privileges_refuse_rather_than_degrade() {
     let profile = parse_profile(&registry(), &canonical_document())
         .expect("the canonical profile must parse");
 
-    let unprivileged =
-        resolve_controls(&profile, &HostFacts::new("linux-x86_64", false, true, true))
-            .expect_err("process isolation without root is a refusal, never best effort");
+    let unprivileged = resolve_controls(&profile, &HostFacts::new("linux-x86_64", false, true))
+        .expect_err("process isolation without root is a refusal, never best effort");
     assert_eq!(unprivileged.code(), "harness.control_not_enforceable");
 
-    let no_setpriv = resolve_controls(&profile, &HostFacts::new("linux-x86_64", true, false, true))
+    let no_setpriv = resolve_controls(&profile, &HostFacts::new("linux-x86_64", true, false))
         .expect_err("resource limits without setpriv are a refusal, never best effort");
     assert_eq!(no_setpriv.code(), "harness.control_not_enforceable");
 }
@@ -120,7 +118,7 @@ fn a_capability_the_engine_does_not_provide_is_refused_deny_on_missing() {
     // process engine deliberately does not provide at this stage.
     let profile = parse_profile(&registry(), &with_digest_recomputed(payload))
         .expect("the locked vector profile must parse");
-    let refusal = resolve_controls(&profile, &HostFacts::new("linux-x86_64", true, true, true))
+    let refusal = resolve_controls(&profile, &HostFacts::new("linux-x86_64", true, true))
         .expect_err("a missing engine capability denies the run");
     assert_eq!(refusal.code(), "harness.control_not_enforceable");
 }

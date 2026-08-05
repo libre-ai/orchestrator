@@ -13,10 +13,6 @@ path = "src/lib.rs"
 [dependencies]
 ed25519-dalek = "=3.0.0"
 libre-ai-contract-types = { version = "=0.1.0", git = "https://github.com/libre-ai/sdk-rs", rev = "02214613c5cb0549d0618484d9b479c4cfb3c7ce" }
-# Safe wrappers over the syscalls this stage needs: reading the peer
-# credentials of the worker socket. libc would work too, but every call would
-# be an unsafe block and this crate forbids unsafe at the crate level.
-rustix = { version = "=1.1.4", default-features = false, features = ["net", "std"] }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_jcs = "=0.2.0"
 serde_json = { version = "=1.0.150", features = ["float_roundtrip"] }

@@ -43,7 +43,6 @@ pub struct ConfinementPlan {
     setpriv: Option<PathBuf>,
     setsid: Option<PathBuf>,
     prlimit: Option<PathBuf>,
-    verify_peer: bool,
 }
 
 impl ConfinementPlan {
@@ -60,7 +59,6 @@ impl ConfinementPlan {
             setpriv: Some(setpriv.to_path_buf()),
             setsid: None,
             prlimit: None,
-            verify_peer: false,
         }
     }
 
@@ -74,21 +72,6 @@ impl ConfinementPlan {
     pub fn with_prlimit(mut self, prlimit: &Path) -> Self {
         self.prlimit = Some(prlimit.to_path_buf());
         self
-    }
-
-    /// Ask the kernel who is on the other end of the transport, as
-    /// `workerTransport.verifyOsPeer` prescribes. Off by default so the host
-    /// primitive stays usable where the control is not prescribed; a real run
-    /// always turns it on, and a host that cannot answer refuses.
-    #[must_use]
-    pub const fn with_peer_verification(mut self) -> Self {
-        self.verify_peer = true;
-        self
-    }
-
-    #[must_use]
-    pub const fn verifies_peer(&self) -> bool {
-        self.verify_peer
     }
 
     /// A plan is privileged only when it can honour the whole identity

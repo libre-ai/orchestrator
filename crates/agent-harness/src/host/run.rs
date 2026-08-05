@@ -72,12 +72,7 @@ fn gather_host_facts() -> HostFacts {
         .output()
         .map(|probe| String::from_utf8_lossy(&probe.stdout).trim() == "0")
         .unwrap_or(false);
-    HostFacts::new(
-        PLATFORM,
-        euid_is_root,
-        tool_present("setpriv"),
-        crate::host::peer::peer_credentials_readable(),
-    )
+    HostFacts::new(PLATFORM, euid_is_root, tool_present("setpriv"))
 }
 
 /// Absolute, fixed candidates only: no PATH lookup, so nothing the caller
@@ -103,9 +98,7 @@ fn host_plan(dedicated_uid: Option<u32>, dedicated_gid: Option<u32>) -> Confinem
     let (Some(uid), Some(gid)) = (dedicated_uid, dedicated_gid) else {
         return ConfinementPlan::unprivileged();
     };
-    // The locked profile fixes verifyOsPeer const true, so every real run
-    // asks the kernel to name its peer.
-    let mut plan = ConfinementPlan::privileged(uid, gid, &setpriv).with_peer_verification();
+    let mut plan = ConfinementPlan::privileged(uid, gid, &setpriv);
     if let Some(setsid) = tool_path("setsid") {
         plan = plan.with_setsid(&setsid);
     }

@@ -5,7 +5,6 @@
 
 mod binding;
 mod fs;
-mod peer;
 mod process;
 mod run;
 
