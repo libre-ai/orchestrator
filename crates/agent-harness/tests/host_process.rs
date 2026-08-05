@@ -52,7 +52,11 @@ fn a_worker_flooding_its_output_is_truncated_and_marked() {
     )
     .expect("the flooding worker still runs");
     assert!(outcome.truncated(), "the capture must stop at its bound");
-    assert!(outcome.output().len() <= 1_000);
+    // The worker never returns the token, so the frame cannot be stripped and
+    // the caller sees the raw capture: bounded by the content limit plus the
+    // transport frame the profile's bound does not have to pay for.
+    assert!(outcome.output().len() <= 1_044);
+    assert!(!outcome.run_binding_proved());
 }
 
 #[test]
@@ -89,5 +93,31 @@ fn a_worker_outliving_its_duration_bound_is_killed() {
     )
     .expect("the sleeping worker is reaped");
     assert!(outcome.timed_out(), "the duration bound must kill the run");
+    assert!(!outcome.exit_ok());
+}
+
+/// `maxDurationSeconds` must bound the RUN, not merely the read phase: a
+/// worker that never drains stdin used to block write_all before the clock
+/// started (round 2 security verdict, blocking finding 2).
+#[test]
+fn a_worker_that_never_reads_its_input_cannot_stall_the_harness() {
+    let started = std::time::Instant::now();
+    let big = vec![b'x'; 1_048_576];
+    let outcome = spawn_confined(
+        // Exits at once without reading a byte of stdin.
+        Path::new("/bin/echo"),
+        &["done".to_owned()],
+        &big,
+        Path::new("/tmp"),
+        &limits(4_096, 1_000),
+        &ConfinementPlan::unprivileged(),
+        &bare_chain(),
+        &RunBinding::fresh().expect("entropy"),
+    )
+    .expect("the harness returns rather than blocking on the write");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "a payload the worker never reads must not hold the harness open"
+    );
     assert!(!outcome.exit_ok());
 }

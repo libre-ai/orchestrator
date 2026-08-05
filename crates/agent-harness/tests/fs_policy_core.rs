@@ -159,3 +159,18 @@ fn a_multi_star_pattern_decides_in_bounded_time() {
         "the glob decision must stay bounded"
     );
 }
+
+/// The locked relativePath alphabet contains `*`, so a literal star is a legal
+/// path character and the subject shares the metacharacter with the pattern.
+/// A matcher that consumes it as a literal loses its backtrack point and a
+/// denied file stops being denied (round 3 security verdict on 0ab2a20).
+#[test]
+fn a_literal_star_in_the_subject_does_not_escape_the_pattern() {
+    let profile = profile_with_writable("*.pem");
+    evaluate_path_access(
+        Path::new(ROOT),
+        &access("/ws/*.x.pem", PathAccessKind::Write),
+        &profile,
+    )
+    .expect("a subject carrying a literal star still matches the pattern");
+}

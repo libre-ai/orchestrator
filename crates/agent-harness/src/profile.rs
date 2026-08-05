@@ -188,11 +188,13 @@ pub fn profile_digest(document: &Value) -> Result<String, HarnessRefusal> {
 /// stage: `filesystem` (the worker's own syscalls are bounded by the
 /// dedicated identity's DAC, not by the path sets), `providerGateway`,
 /// `privilegedToolBroker`, `operationalLogs` and `attestation`. Of
-/// `workerTransport` the whole block survives: `kind` selects the mechanism,
-/// `runBoundToken` is a per-run token the response must return, and
-/// `verifyOsPeer` holds by construction — the transport is an anonymous pair
-/// handed to exactly one child, and the capability guard keeps every named
-/// socket out of the crate so no other peer can exist.
+/// `workerTransport` is absent even though `runBoundToken` IS applied: the
+/// block also carries `verifyOsPeer`, and the by-construction argument for it
+/// was refuted (round 3 — the peer at write time is the child AND every
+/// descendant holding the inherited descriptor, which is exactly what a
+/// credential check would distinguish). A block cannot enter the surface
+/// while any field in it is unapplied, so the whole block stays out until the
+/// projection is field-granular or the credential check exists.
 pub const APPLIED_PROFILE_SURFACE: &[&str] = &[
     "schemaVersion",
     "id",
@@ -202,7 +204,6 @@ pub const APPLIED_PROFILE_SURFACE: &[&str] = &[
     "process",
     "sandboxEngine",
     "outputs",
-    "workerTransport",
 ];
 
 /// The content address of what was actually applied.

@@ -122,37 +122,66 @@ pub fn spawn_confined(
     // them here would deny the reader its EOF when the worker exits.
     drop(command);
 
+    let started = Instant::now();
+
     let mut sender = harness_end
         .try_clone()
         .map_err(|_| HarnessRefusal::ControlNotEnforceable)?;
+    // The duration bound covers the write too: a worker that never drains
+    // stdin used to block here, before the clock started and before any
+    // timeout existed (round 2 security verdict, blocking finding 2).
     sender
-        .write_all(&binding.frame(payload))
+        .set_write_timeout(Some(limits.max_duration))
         .map_err(|_| HarnessRefusal::ControlNotEnforceable)?;
-    sender
-        .shutdown(std::net::Shutdown::Write)
-        .map_err(|_| HarnessRefusal::ControlNotEnforceable)?;
+    // A write that cannot complete within the bound is the bound firing, not
+    // a control that could not be applied: the run ends timed out, with the
+    // group reaped, instead of the harness blocking forever.
+    let mut write_timed_out = false;
+    if sender.write_all(&binding.frame(payload)).is_err() {
+        write_timed_out = true;
+        reap(&mut child, plan);
+    }
+    let _ = sender.shutdown(std::net::Shutdown::Write);
 
-    let started = Instant::now();
     let mut receiver = harness_end;
-    receiver
-        .set_read_timeout(Some(Duration::from_millis(50)))
-        .map_err(|_| HarnessRefusal::ControlNotEnforceable)?;
+    // Only when there is something to read: after a failed write the socket
+    // may already be in an error state, and a run that could not deliver its
+    // payload has nothing to wait for.
+    if !write_timed_out {
+        receiver
+            .set_read_timeout(Some(Duration::from_millis(50)))
+            .map_err(|_| HarnessRefusal::ControlNotEnforceable)?;
+    }
 
+    // The frame is transport, not content: the profile's byte bound must not
+    // be spent on the run token (round 3 security verdict, minor).
     let cap = usize::try_from(limits.max_output_bytes)
-        .map_err(|_| HarnessRefusal::ControlNotEnforceable)?;
+        .map_err(|_| HarnessRefusal::ControlNotEnforceable)?
+        .saturating_add(binding.frame_len());
     let mut output = Vec::with_capacity(cap.min(65_536));
     let mut truncated = false;
-    let mut timed_out = false;
+    let mut timed_out = write_timed_out;
     let mut capture_failed = false;
     let mut buffer = [0u8; 4_096];
     loop {
+        // A run that could not deliver its payload has nothing to read back.
+        if write_timed_out {
+            break;
+        }
         if started.elapsed() >= limits.max_duration {
             timed_out = true;
             reap(&mut child, plan);
             break;
         }
         match receiver.read(&mut buffer) {
-            Ok(0) => break,
+            // EOF only says the descriptors are closed, not that the group
+            // is gone: a descendant that closed its inherited fds outlived
+            // every path that produced an attestation (round 2 security
+            // verdict, blocking finding 1).
+            Ok(0) => {
+                reap(&mut child, plan);
+                break;
+            }
             Ok(count) => {
                 let room = cap.saturating_sub(output.len());
                 if count > room {

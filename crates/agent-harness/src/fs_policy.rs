@@ -72,13 +72,18 @@ fn glob_matches(pattern: &str, path: &str) -> bool {
         let mut resume = 0usize;
 
         while s < segment.len() {
-            if p < pattern.len() && pattern[p] == segment[s] {
-                p += 1;
-                s += 1;
-            } else if p < pattern.len() && pattern[p] == '*' {
+            // The wildcard is decided by the PATTERN, never by the subject:
+            // `*` is a legal path character, so preferring the literal
+            // comparison let a subject carrying a star consume the pattern's
+            // wildcard and escape a match — fail-open in the denied set
+            // (round 3 security verdict on 0ab2a20).
+            if p < pattern.len() && pattern[p] == '*' {
                 star = Some(p);
                 resume = s;
                 p += 1;
+            } else if p < pattern.len() && pattern[p] == segment[s] {
+                p += 1;
+                s += 1;
             } else if let Some(last_star) = star {
                 p = last_star + 1;
                 resume += 1;

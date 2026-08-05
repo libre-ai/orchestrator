@@ -34,6 +34,12 @@ impl RunBinding {
         })
     }
 
+    /// The transport overhead the frame adds, so a byte bound meant for the
+    /// worker's content is not spent on the token.
+    pub(crate) const fn frame_len(&self) -> usize {
+        self.token.len() + 1
+    }
+
     #[must_use]
     pub fn token(&self) -> &str {
         &self.token
