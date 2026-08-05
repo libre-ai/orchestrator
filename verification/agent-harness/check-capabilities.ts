@@ -10,7 +10,6 @@ const CRATE_ROOT = "crates/agent-harness";
 const HOST_PREFIX = `${CRATE_ROOT}/src/host/`;
 
 const ALLOWED_DEPENDENCIES = new Set([
-  "chrono",
   "ed25519-dalek",
   "libre-ai-contract-types",
   "serde",
@@ -54,9 +53,16 @@ const FORBIDDEN_OUTSIDE_HOST = [
   "UnixListener",
 ];
 
+// Rust paths are whitespace-insensitive, so a literal substring ban is evaded
+// by `use std :: env ;` and by grouped imports (`use std::{env, fs};`). These
+// regexes close both, as the sibling orchestrator guard already did.
 const FORBIDDEN_SOURCE_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
   ["std-alias", /\b(?:use|extern\s+crate)\s+std\s+as\b/u],
   ["ffi", /\bextern\s*"C"/u],
+  ["spaced-std-env", /\bstd\s*::\s*env\b/u],
+  ["spaced-std-net", /\bstd\s*::\s*net\s*::\s*(?:Tcp|Udp)/u],
+  ["grouped-std-env", /\bstd\s*::\s*\{[\s\S]{0,500}\benv\b/u],
+  ["grouped-std-net", /\bstd\s*::\s*\{[\s\S]{0,500}\bnet\b/u],
 ];
 
 export function forbiddenEverywhere(path: string, source: string): string[] {
@@ -125,9 +131,8 @@ export async function checkAgentHarnessCapabilityBoundary(): Promise<string[]> {
       failures.push(`dependency-not-allowed:${dependency}`);
     }
   }
-  for (const required of ALLOWED_DEPENDENCIES) {
-    if (!dependencies.includes(required)) failures.push(`dependency-missing:${required}`);
-  }
+  // An upper bound, not a requiredlist: a dependency that stops being needed
+  // must be removable without the guard forcing dead weight to stay.
 
   for (const forbiddenPath of [
     `${CRATE_ROOT}/build.rs`,

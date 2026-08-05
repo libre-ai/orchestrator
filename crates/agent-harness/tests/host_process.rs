@@ -1,9 +1,23 @@
-use libre_ai_agent_harness::{ConfinementPlan, SpawnLimits, spawn_confined};
+use libre_ai_agent_harness::{
+    ConfinementPlan, ProcessPrescription, SpawnLimits, WrapperChain, plan_wrapper_chain,
+    spawn_confined,
+};
 use std::path::Path;
 use std::time::Duration;
 
 fn limits(max_output: u64, timeout_ms: u64) -> SpawnLimits {
     SpawnLimits::new(max_output, Duration::from_millis(timeout_ms))
+}
+
+/// These tests exercise the host primitive itself, so they prescribe nothing:
+/// the chain is empty and the program runs directly. A real run always goes
+/// through a profile, whose const-locked prescription the chain must apply.
+fn bare_chain() -> WrapperChain {
+    plan_wrapper_chain(
+        &ProcessPrescription::new(false, false, false, false, 0),
+        &ConfinementPlan::unprivileged(),
+    )
+    .expect("an empty prescription needs no mechanism")
 }
 
 #[test]
@@ -14,6 +28,7 @@ fn the_payload_travels_the_private_pair_and_comes_back_bound_to_the_run() {
         b"run-token-42:payload",
         &limits(4_096, 5_000),
         &ConfinementPlan::unprivileged(),
+        &bare_chain(),
     )
     .expect("a cat worker echoes the payload");
     assert!(outcome.exit_ok());
@@ -29,6 +44,7 @@ fn a_worker_flooding_its_output_is_truncated_and_marked() {
         b"",
         &limits(1_000, 5_000),
         &ConfinementPlan::unprivileged(),
+        &bare_chain(),
     )
     .expect("the flooding worker still runs");
     assert!(outcome.truncated(), "the capture must stop at its bound");
@@ -43,6 +59,7 @@ fn the_worker_inherits_no_environment() {
         b"",
         &limits(4_096, 5_000),
         &ConfinementPlan::unprivileged(),
+        &bare_chain(),
     )
     .expect("the env worker runs");
     let printed = String::from_utf8_lossy(outcome.output()).to_string();
@@ -60,6 +77,7 @@ fn a_worker_outliving_its_duration_bound_is_killed() {
         b"",
         &limits(4_096, 300),
         &ConfinementPlan::unprivileged(),
+        &bare_chain(),
     )
     .expect("the sleeping worker is reaped");
     assert!(outcome.timed_out(), "the duration bound must kill the run");

@@ -1,4 +1,5 @@
 use crate::canonical::canonical_sha256;
+use crate::confinement::ProcessPrescription;
 use crate::refusal::HarnessRefusal;
 use libre_ai_contract_types::ContractRegistry;
 use serde::Deserialize;
@@ -17,6 +18,7 @@ pub struct HarnessProfile {
     max_bytes_per_tool: u64,
     max_total_bytes: u64,
     max_duration_seconds: u64,
+    process: ProcessPrescription,
     worker_transport_kind: String,
     required_capabilities: Vec<String>,
     read_only_paths: Vec<String>,
@@ -42,6 +44,11 @@ struct ProfileWire {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProcessWire {
+    dedicated_identity: bool,
+    deny_privilege_escalation: bool,
+    drop_ambient_capabilities: bool,
+    kill_process_group: bool,
+    max_processes: u32,
     max_duration_seconds: u64,
 }
 
@@ -81,6 +88,13 @@ impl From<ProfileWire> for HarnessProfile {
             max_bytes_per_tool: wire.outputs.max_bytes_per_tool,
             max_total_bytes: wire.outputs.max_total_bytes,
             max_duration_seconds: wire.process.max_duration_seconds,
+            process: ProcessPrescription::new(
+                wire.process.dedicated_identity,
+                wire.process.deny_privilege_escalation,
+                wire.process.drop_ambient_capabilities,
+                wire.process.kill_process_group,
+                wire.process.max_processes,
+            ),
             worker_transport_kind: wire.worker_transport.kind,
             required_capabilities: wire.sandbox_engine.required_capabilities,
             read_only_paths: wire.filesystem.read_only,
@@ -120,6 +134,13 @@ impl HarnessProfile {
     #[must_use]
     pub const fn max_duration_seconds(&self) -> u64 {
         self.max_duration_seconds
+    }
+
+    /// The whole const-locked process block, never a subset: every field is
+    /// applied by the wrapper chain or the run is refused.
+    #[must_use]
+    pub const fn process(&self) -> ProcessPrescription {
+        self.process
     }
 
     #[must_use]

@@ -1,9 +1,10 @@
+use crate::confinement::{ConfinementPlan, WrapperChain};
 use crate::refusal::HarnessRefusal;
 use std::io::{Read, Write};
 use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixStream;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::path::Path;
+use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 /// Output and duration bounds of one confined spawn.
@@ -20,36 +21,6 @@ impl SpawnLimits {
             max_output_bytes,
             max_duration,
         }
-    }
-}
-
-/// The process-identity controls a resolved run applies. The unprivileged
-/// plan exists for the host primitive alone: a real run only ever reaches
-/// this module after `resolve_controls` admitted the full profile, which
-/// requires the privileged fields on the platforms the profile names.
-#[derive(Clone, Debug, Default)]
-pub struct ConfinementPlan {
-    dedicated_uid: Option<u32>,
-    setpriv: Option<PathBuf>,
-}
-
-impl ConfinementPlan {
-    #[must_use]
-    pub fn unprivileged() -> Self {
-        Self::default()
-    }
-
-    #[must_use]
-    pub fn privileged(dedicated_uid: u32, setpriv: &Path) -> Self {
-        Self {
-            dedicated_uid: Some(dedicated_uid),
-            setpriv: Some(setpriv.to_path_buf()),
-        }
-    }
-
-    #[must_use]
-    pub const fn is_privileged(&self) -> bool {
-        self.dedicated_uid.is_some() && self.setpriv.is_some()
     }
 }
 
@@ -96,6 +67,7 @@ pub fn spawn_confined(
     payload: &[u8],
     limits: &SpawnLimits,
     plan: &ConfinementPlan,
+    chain: &WrapperChain,
 ) -> Result<ConfinedOutcome, HarnessRefusal> {
     let (harness_end, worker_end) =
         UnixStream::pair().map_err(|_| HarnessRefusal::ControlNotEnforceable)?;
@@ -103,25 +75,14 @@ pub fn spawn_confined(
         .try_clone()
         .map_err(|_| HarnessRefusal::ControlNotEnforceable)?;
 
-    let mut command = match (&plan.setpriv, plan.dedicated_uid) {
-        (Some(setpriv), Some(uid)) => {
-            let mut wrapped = Command::new(setpriv);
-            wrapped
-                .arg("--no-new-privs")
-                .arg("--reuid")
-                .arg(uid.to_string())
-                .arg("--clear-groups")
-                .arg("--")
-                .arg(program)
-                .args(args);
-            wrapped
-        }
-        _ => {
-            let mut direct = Command::new(program);
-            direct.args(args);
-            direct
-        }
-    };
+    // The chain applies the prescription; an empty one runs the program
+    // directly, which only a plan that prescribes nothing can produce.
+    let argv = chain.argv(program, args);
+    let (head, tail) = argv
+        .split_first()
+        .ok_or(HarnessRefusal::ControlNotEnforceable)?;
+    let mut command = Command::new(head);
+    command.args(tail);
     command
         .env_clear()
         .stdin(Stdio::from(OwnedFd::from(worker_end)))
@@ -160,7 +121,7 @@ pub fn spawn_confined(
     loop {
         if started.elapsed() >= limits.max_duration {
             timed_out = true;
-            let _ = child.kill();
+            reap(&mut child, plan);
             break;
         }
         match receiver.read(&mut buffer) {
@@ -171,7 +132,7 @@ pub fn spawn_confined(
                     output.extend_from_slice(&buffer[..room]);
                     truncated = true;
                     // The bound is reached: stop buffering, reap the worker.
-                    let _ = child.kill();
+                    reap(&mut child, plan);
                     break;
                 }
                 output.extend_from_slice(&buffer[..count]);
@@ -193,4 +154,32 @@ pub fn spawn_confined(
         timed_out,
         exit_ok,
     })
+}
+
+/// Kill the worker's whole process group, not just its leader.
+///
+/// `setsid` made the worker a group leader whose pgid equals its pid, so
+/// `kill -- -<pid>` reaches every descendant. Killing the direct child alone
+/// left grandchildren running past the duration bound, holding the transport
+/// open (K4 security verdict on 5bee6a3, blocking finding 2). A plan without
+/// setsid never reaches a spawn, so the group is always the right target;
+/// the direct kill remains as the last resort if the signal cannot be sent.
+fn reap(child: &mut Child, plan: &ConfinementPlan) {
+    if plan.kills_process_group() {
+        let group = format!("-{}", child.id());
+        let sent = Command::new("/bin/kill")
+            .arg("-KILL")
+            .arg("--")
+            .arg(&group)
+            .env_clear()
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
+        if sent {
+            return;
+        }
+    }
+    let _ = child.kill();
 }

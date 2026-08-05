@@ -14,6 +14,7 @@
 
 mod attestation;
 mod canonical;
+mod confinement;
 mod controls;
 mod fs_policy;
 mod host;
@@ -22,14 +23,15 @@ mod profile;
 mod refusal;
 
 pub use host::{
-    ConfinedOutcome, ConfinementPlan, RunError, RunIdentity, SpawnLimits, WorkspaceObserver,
-    run_confined_attested, spawn_confined,
+    ConfinedOutcome, RunError, RunIdentity, SpawnLimits, WorkspaceObserver, run_confined_attested,
+    spawn_confined,
 };
 
 pub use attestation::{
     ArtifactRef, AttestationInputs, attestation_digest, public_key_base64url, sign_attestation,
     verify_attestation,
 };
+pub use confinement::{ConfinementPlan, ProcessPrescription, WrapperChain, plan_wrapper_chain};
 pub use controls::{EffectiveControls, HostFacts, resolve_controls};
 pub use fs_policy::{PathAccess, PathAccessKind, evaluate_path_access};
 pub use outputs::{OutputLedger, OutputScan, admit_scan};

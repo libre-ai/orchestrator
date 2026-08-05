@@ -1,6 +1,6 @@
 use libre_ai_agent_harness::{
-    ArtifactRef, ConfinementPlan, HarnessRefusal, RunError, RunIdentity, profile_digest,
-    public_key_base64url, run_confined_attested, verify_attestation,
+    ArtifactRef, HarnessRefusal, RunError, RunIdentity, profile_digest, public_key_base64url,
+    run_confined_attested, verify_attestation,
 };
 use libre_ai_contract_types::ContractRegistry;
 use serde_json::Value;
@@ -14,7 +14,7 @@ const CANONICAL_PROFILE: &str = include_str!(concat!(
 const PROFILE_ID: &str = "urn:libre-ai:profile:local-process-1";
 const SIGNING_SEED: [u8; 32] = [11; 32];
 
-fn identity() -> RunIdentity {
+fn run_identity() -> RunIdentity {
     RunIdentity {
         attestation_id: "urn:libre-ai:attestation:harness-run-e2e-1".to_owned(),
         tenant_id: "ten_1234567890abcdef".to_owned(),
@@ -34,8 +34,8 @@ fn engine_manifest() -> ArtifactRef {
 }
 
 /// The dedicated worker identity is arranged by CI (useradd) and looked up
-/// here; a host without it simply has no privileged plan to offer.
-fn privileged_plan() -> Option<ConfinementPlan> {
+/// here; the harness resolves its own tools, the test only nominates the id.
+fn dedicated_identity() -> Option<(u32, u32)> {
     let uid = Command::new("/usr/bin/id")
         .args(["-u", "harness-worker"])
         .output()
@@ -47,10 +47,7 @@ fn privileged_plan() -> Option<ConfinementPlan> {
                 .parse::<u32>()
                 .ok()
         })?;
-    let setpriv = ["/usr/bin/setpriv", "/bin/setpriv"]
-        .into_iter()
-        .find(|candidate| Path::new(candidate).exists())?;
-    Some(ConfinementPlan::privileged(uid, Path::new(setpriv)))
+    Some((uid, uid))
 }
 
 #[test]
@@ -64,7 +61,7 @@ fn the_first_confined_execution_is_attested_or_exactly_refused() {
     let _ = std::fs::remove_dir_all(&workspace);
     std::fs::create_dir_all(workspace.join("out")).expect("the workspace must build");
 
-    let plan = privileged_plan().unwrap_or_else(ConfinementPlan::unprivileged);
+    let identity = dedicated_identity();
     let result = run_confined_attested(
         &registry,
         &document,
@@ -74,22 +71,30 @@ fn the_first_confined_execution_is_attested_or_exactly_refused() {
         Path::new("/bin/cat"),
         &[],
         b"bootstrap-payload",
-        &plan,
+        identity.map(|(uid, _)| uid),
+        identity.map(|(_, gid)| gid),
         engine_manifest(),
-        &identity(),
+        &run_identity(),
         &SIGNING_SEED,
         "2026-08-05T12:00:00Z",
     );
 
     if cfg!(target_os = "linux") {
-        if plan.is_privileged() {
+        if identity.is_some() {
             // The bootstrap path: a real confined run, attested and
             // independently verifiable (ADR-0018 D2).
             let attestation = result.expect("the fully equipped host attests the run");
             let public_key = public_key_base64url(&SIGNING_SEED);
             verify_attestation(&registry, &attestation, &public_key)
                 .expect("the attestation verifies without the run that produced it");
-            assert_eq!(attestation["platform"], "linux-x86_64");
+            // Compared to what this build targets, never to the architecture
+            // the CI runner happens to be (K4 architecture verdict, minor 3).
+            let expected = if cfg!(target_arch = "x86_64") {
+                "linux-x86_64"
+            } else {
+                "linux-aarch64"
+            };
+            assert_eq!(attestation["platform"], expected);
             assert_eq!(attestation["networkMode"], "none");
         } else {
             // Linux without the arranged identity: refused, never degraded.

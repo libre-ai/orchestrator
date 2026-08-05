@@ -8,5 +8,5 @@ mod process;
 mod run;
 
 pub use fs::WorkspaceObserver;
-pub use process::{ConfinedOutcome, ConfinementPlan, SpawnLimits, spawn_confined};
+pub use process::{ConfinedOutcome, SpawnLimits, spawn_confined};
 pub use run::{RunError, RunIdentity, run_confined_attested};

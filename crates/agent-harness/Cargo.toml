@@ -11,7 +11,6 @@ publish = false
 path = "src/lib.rs"
 
 [dependencies]
-chrono = { version = "=0.4.45", default-features = false, features = ["serde", "std"] }
 ed25519-dalek = "=3.0.0"
 libre-ai-contract-types = { version = "=0.1.0", git = "https://github.com/libre-ai/sdk-rs", rev = "02214613c5cb0549d0618484d9b479c4cfb3c7ce" }
 serde = { version = "=1.0.228", features = ["derive"] }

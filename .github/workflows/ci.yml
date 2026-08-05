@@ -75,10 +75,15 @@ jobs:
       # ever observes them — a host without them refuses, never degrades.
       - name: First confined execution, attested (privileged e2e)
         run: |
-          sudo useradd --system --shell /usr/sbin/nologin harness-worker
-          sudo --preserve-env=PATH,CARGO_HOME,RUSTUP_HOME \
-            "$(command -v cargo)" test --locked -p libre-ai-agent-harness \
-            --test confined_execution -- --nocapture
+          id -u harness-worker >/dev/null 2>&1 \
+            || sudo useradd --system --shell /usr/sbin/nologin harness-worker
+          # Build unprivileged, then run only the prebuilt test binary as root:
+          # sudo never resolves a compiler through a preserved PATH.
+          binary="$(cargo test --locked --no-run -p libre-ai-agent-harness \
+            --test confined_execution --message-format=json \
+            | jq -r 'select(.profile.test == true) | .executable' | tail -1)"
+          test -x "$binary"
+          sudo -- "$binary" --nocapture
 
   dependency-policy:
     name: Dependency policy
