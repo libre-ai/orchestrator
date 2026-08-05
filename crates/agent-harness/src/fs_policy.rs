@@ -28,6 +28,11 @@ impl PathAccess {
             kind,
         }
     }
+
+    #[must_use]
+    pub fn canonical_path(&self) -> &Path {
+        &self.canonical_path
+    }
 }
 
 /// Minimal glob over the locked `relativePath` alphabet: `**` spans any number

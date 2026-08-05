@@ -16,9 +16,12 @@ mod attestation;
 mod canonical;
 mod controls;
 mod fs_policy;
+mod host;
 mod outputs;
 mod profile;
 mod refusal;
+
+pub use host::WorkspaceObserver;
 
 pub use attestation::{
     ArtifactRef, AttestationInputs, attestation_digest, public_key_base64url, sign_attestation,
