@@ -5,17 +5,18 @@ use crate::refusal::HarnessRefusal;
 /// profile requires beyond this list is denied (`denyOnMissing` is const true
 /// in the locked contract), never approximated.
 ///
-/// `worker_transport_isolation` is absent for the same reason: the transport
-/// carries a real per-run token, but `verifyOsPeer` has no credential check
-/// behind it, so the capability would attest more than it applies (round 3).
-///
 /// `filesystem_confinement` is deliberately absent. Bounding a worker's own
 /// syscalls to the workspace needs chroot or a mount namespace, neither of
 /// which this stage opens; the path-handling machinery holds for accesses the
 /// harness performs, not for the worker's direct ones. Listing it here would
 /// put it in `effectiveControls` and make the attestation claim a boundary
 /// that does not exist (K4 verdicts on 5bee6a3, blocking finding 1).
-const ENGINE_CAPABILITIES: [&str; 3] = ["output_bounds", "process_isolation", "resource_limits"];
+const ENGINE_CAPABILITIES: [&str; 4] = [
+    "output_bounds",
+    "process_isolation",
+    "resource_limits",
+    "worker_transport_isolation",
+];
 
 /// Transport kinds whose enforcement is closed at this stage: expressible in
 /// the locked schema, refused by the runtime until their own package and
@@ -36,15 +37,22 @@ pub struct HostFacts {
     platform: String,
     euid_is_root: bool,
     setpriv_present: bool,
+    peer_credentials_readable: bool,
 }
 
 impl HostFacts {
     #[must_use]
-    pub fn new(platform: &str, euid_is_root: bool, setpriv_present: bool) -> Self {
+    pub fn new(
+        platform: &str,
+        euid_is_root: bool,
+        setpriv_present: bool,
+        peer_credentials_readable: bool,
+    ) -> Self {
         Self {
             platform: platform.to_owned(),
             euid_is_root,
             setpriv_present,
+            peer_credentials_readable,
         }
     }
 }
@@ -68,6 +76,9 @@ const fn capability_enforceable(capability: &str, facts: &HostFacts) -> bool {
     match capability.as_bytes() {
         b"process_isolation" => facts.euid_is_root && facts.setpriv_present,
         b"resource_limits" => facts.setpriv_present,
+        // The transport carries a per-run token AND a kernel-named peer:
+        // both need the host to answer who is on the other end.
+        b"worker_transport_isolation" => facts.peer_credentials_readable,
         // output_bounds and worker_transport_isolation are enforced by the
         // harness itself, host privileges regardless.
         _ => true,

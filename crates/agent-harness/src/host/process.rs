@@ -1,5 +1,6 @@
 use crate::confinement::{ConfinementPlan, WrapperChain};
 use crate::host::binding::RunBinding;
+use crate::host::peer::verify_peer_is;
 use crate::refusal::HarnessRefusal;
 use std::io::{Read, Write};
 use std::os::fd::OwnedFd;
@@ -121,6 +122,13 @@ pub fn spawn_confined(
     // Command keeps the worker-side descriptors alive until dropped; holding
     // them here would deny the reader its EOF when the worker exits.
     drop(command);
+
+    // `verifyOsPeer`, applied: the kernel names the process on the other end,
+    // and it must be the child this harness started — not a descendant that
+    // inherited the descriptor (round 3 verdict on 0ab2a20).
+    if plan.verifies_peer() {
+        verify_peer_is(&harness_end, child.id())?;
+    }
 
     let started = Instant::now();
 

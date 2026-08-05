@@ -5,10 +5,12 @@
 
 mod binding;
 mod fs;
+mod peer;
 mod process;
 mod run;
 
 pub use binding::RunBinding;
+
 pub use fs::{WorkspaceObserver, canonical_workspace};
 pub use process::{ConfinedOutcome, SpawnLimits, spawn_confined};
 pub use run::{RunError, RunIdentity, run_confined_attested};

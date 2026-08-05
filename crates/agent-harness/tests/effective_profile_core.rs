@@ -31,13 +31,27 @@ fn the_effective_digest_differs_from_the_requested_one_when_blocks_are_unapplied
 #[test]
 fn the_projection_is_reproducible_from_the_requested_profile_alone() {
     let document = canonical_document();
-    let mut projected = serde_json::Map::new();
-    for key in APPLIED_PROFILE_SURFACE {
-        if let Some(value) = document.get(*key) {
-            projected.insert((*key).to_owned(), value.clone());
+    let mut projected = Value::Object(serde_json::Map::new());
+    for pointer in APPLIED_PROFILE_SURFACE {
+        let value = document
+            .pointer(pointer)
+            .expect("the surface names a present field");
+        let segments: Vec<&str> = pointer.trim_start_matches('/').split('/').collect();
+        let (leaf, parents) = segments.split_last().expect("a pointer has a leaf");
+        let mut cursor = &mut projected;
+        for segment in parents {
+            cursor = cursor
+                .as_object_mut()
+                .expect("an object")
+                .entry((*segment).to_owned())
+                .or_insert_with(|| Value::Object(serde_json::Map::new()));
         }
+        cursor
+            .as_object_mut()
+            .expect("an object")
+            .insert((*leaf).to_owned(), value.clone());
     }
-    let recomputed = profile_digest(&Value::Object(projected)).expect("the projection must digest");
+    let recomputed = profile_digest(&projected).expect("the projection must digest");
     assert_eq!(
         recomputed,
         effective_profile_digest(&document).expect("the applied surface must digest")
@@ -51,6 +65,8 @@ fn the_projection_is_reproducible_from_the_requested_profile_alone() {
 fn the_unapplied_blocks_do_not_move_the_effective_digest() {
     let mut widened = canonical_document();
     widened["operationalLogs"]["maxRetentionHours"] = serde_json::json!(1);
+    widened["enforcement"] = serde_json::json!("required");
+    widened["outputs"]["privateByDefault"] = serde_json::json!(true);
     widened["providerGateway"]["bindExactOrigins"] = serde_json::json!(true);
     widened["filesystem"]["denied"] = serde_json::json!([".env", "**/.git/**", "secrets/**"]);
 

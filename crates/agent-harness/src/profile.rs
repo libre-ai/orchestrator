@@ -21,6 +21,8 @@ pub struct HarnessProfile {
     process: ProcessPrescription,
     worker_transport_kind: String,
     required_capabilities: Vec<String>,
+    engine_manifest: ArtifactWire,
+    deny_on_missing: bool,
     read_only_paths: Vec<String>,
     writable_paths: Vec<String>,
     denied_paths: Vec<String>,
@@ -77,6 +79,16 @@ struct WorkerTransportWire {
 #[serde(rename_all = "camelCase")]
 struct SandboxEngineWire {
     required_capabilities: Vec<String>,
+    manifest: ArtifactWire,
+    deny_on_missing: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactWire {
+    pub id: String,
+    pub digest: String,
+    pub media_type: String,
 }
 
 impl From<ProfileWire> for HarnessProfile {
@@ -97,6 +109,8 @@ impl From<ProfileWire> for HarnessProfile {
             ),
             worker_transport_kind: wire.worker_transport.kind,
             required_capabilities: wire.sandbox_engine.required_capabilities,
+            engine_manifest: wire.sandbox_engine.manifest,
+            deny_on_missing: wire.sandbox_engine.deny_on_missing,
             read_only_paths: wire.filesystem.read_only,
             writable_paths: wire.filesystem.writable,
             denied_paths: wire.filesystem.denied,
@@ -153,6 +167,18 @@ impl HarnessProfile {
         &self.required_capabilities
     }
 
+    /// The engine the profile pins. The harness holds itself to it rather
+    /// than letting the caller assert which engine ran (round 3 verdict).
+    #[must_use]
+    pub fn engine_manifest(&self) -> &ArtifactWire {
+        &self.engine_manifest
+    }
+
+    #[must_use]
+    pub const fn deny_on_missing(&self) -> bool {
+        self.deny_on_missing
+    }
+
     #[must_use]
     pub fn read_only_paths(&self) -> &[String] {
         &self.read_only_paths
@@ -179,31 +205,51 @@ pub fn profile_digest(document: &Value) -> Result<String, HarnessRefusal> {
     canonical_sha256(&unsigned).ok_or(HarnessRefusal::ProfileUnresolved)
 }
 
-/// The profile surface this engine actually applies, in the order the
-/// projection keeps it. Public because an operator must be able to recompute
-/// the effective digest from the requested profile alone: the projection is a
-/// documented rule, not a secret of the harness.
+/// The profile surface this engine actually applies, as JSON pointers.
 ///
-/// Absent on purpose, because nothing in this engine acts on them at this
-/// stage: `filesystem` (the worker's own syscalls are bounded by the
-/// dedicated identity's DAC, not by the path sets), `providerGateway`,
-/// `privilegedToolBroker`, `operationalLogs` and `attestation`. Of
-/// `workerTransport` is absent even though `runBoundToken` IS applied: the
-/// block also carries `verifyOsPeer`, and the by-construction argument for it
-/// was refuted (round 3 — the peer at write time is the child AND every
-/// descendant holding the inherited descriptor, which is exactly what a
-/// credential check would distinguish). A block cannot enter the surface
-/// while any field in it is unapplied, so the whole block stays out until the
-/// projection is field-granular or the credential check exists.
+/// Field granularity, not block granularity: every block of this contract
+/// mixes fields the engine acts on with fields it does not, so a block-level
+/// projection is necessarily wrong in one direction or the other — it was
+/// over-claiming five prescriptions and under-claiming four when round 3
+/// measured it. A pointer enters this list only when a code path reads the
+/// field AND acts on it.
+///
+/// Public because an operator must be able to recompute the effective digest
+/// from the requested profile alone: the projection is a documented rule, not
+/// a secret of the harness.
 pub const APPLIED_PROFILE_SURFACE: &[&str] = &[
-    "schemaVersion",
-    "id",
-    "version",
-    "enforcement",
-    "supportedPlatforms",
-    "process",
-    "sandboxEngine",
-    "outputs",
+    // Identity of the contract and of the profile the run resolved.
+    "/schemaVersion",
+    "/id",
+    // Checked against the running platform before anything starts.
+    "/supportedPlatforms",
+    // Every field below is applied by the wrapper chain.
+    "/process/dedicatedIdentity",
+    "/process/denyPrivilegeEscalation",
+    "/process/dropAmbientCapabilities",
+    "/process/killProcessGroup",
+    "/process/maxProcesses",
+    "/process/maxDurationSeconds",
+    // The engine identity the harness recomputes and holds itself to, and the
+    // deny-on-missing rule it applies to required capabilities.
+    "/sandboxEngine/manifest",
+    "/sandboxEngine/requiredCapabilities",
+    "/sandboxEngine/denyOnMissing",
+    // The byte bounds the output ledger enforces.
+    "/outputs/maxBytesPerTool",
+    "/outputs/maxTotalBytes",
+    // The transport: kind selects the mechanism, the token is required back,
+    // the peer is named by the kernel, and no loopback exists to allow —
+    // the capability guard keeps every network type out of the crate.
+    "/workerTransport/kind",
+    "/workerTransport/runBoundToken",
+    "/workerTransport/verifyOsPeer",
+    "/workerTransport/hostLoopbackAllowed",
+    // What the attestation itself binds, which this crate does bind.
+    "/attestation/signed",
+    "/attestation/bindRequestedProfile",
+    "/attestation/bindEffectiveControls",
+    "/attestation/bindWorkerManifests",
 ];
 
 /// The content address of what was actually applied.
@@ -216,13 +262,29 @@ pub const APPLIED_PROFILE_SURFACE: &[&str] = &[
 /// construction and let the attestation assert every inert block of the
 /// document — the defect both K4 rounds named on 5bee6a3 and f27b3c9.
 pub fn effective_profile_digest(document: &Value) -> Result<String, HarnessRefusal> {
-    let mut projected = serde_json::Map::new();
-    for key in APPLIED_PROFILE_SURFACE {
-        if let Some(value) = document.get(*key) {
-            projected.insert((*key).to_owned(), value.clone());
+    let mut projected = Value::Object(serde_json::Map::new());
+    for pointer in APPLIED_PROFILE_SURFACE {
+        let Some(value) = document.pointer(pointer) else {
+            continue;
+        };
+        let mut cursor = &mut projected;
+        let segments: Vec<&str> = pointer.trim_start_matches('/').split('/').collect();
+        let Some((leaf, parents)) = segments.split_last() else {
+            continue;
+        };
+        for segment in parents {
+            cursor = cursor
+                .as_object_mut()
+                .ok_or(HarnessRefusal::ProfileUnresolved)?
+                .entry((*segment).to_owned())
+                .or_insert_with(|| Value::Object(serde_json::Map::new()));
         }
+        cursor
+            .as_object_mut()
+            .ok_or(HarnessRefusal::ProfileUnresolved)?
+            .insert((*leaf).to_owned(), value.clone());
     }
-    profile_digest(&Value::Object(projected))
+    profile_digest(&projected)
 }
 
 /// Validate against the locked contract, then hold the document to its own

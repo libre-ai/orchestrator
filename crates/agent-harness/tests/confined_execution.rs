@@ -1,5 +1,5 @@
 use libre_ai_agent_harness::{
-    ArtifactRef, HarnessRefusal, RunError, RunIdentity, profile_digest, public_key_base64url,
+    HarnessRefusal, RunError, RunIdentity, profile_digest, public_key_base64url,
     run_confined_attested, verify_attestation,
 };
 use libre_ai_contract_types::ContractRegistry;
@@ -23,14 +23,6 @@ fn run_identity() -> RunIdentity {
         plan_digest: "a".repeat(64),
         signing_key_id: "harness_bootstrap_key_1".to_owned(),
     }
-}
-
-fn engine_manifest() -> ArtifactRef {
-    ArtifactRef::new(
-        "urn:libre-ai:manifest:agent-harness-host-engine-1",
-        "db11edba66efd95aaabc4b606afc58f410986747f32c9f38bb5637327aaaaca5",
-        "application/json",
-    )
 }
 
 /// The dedicated worker identity is arranged by CI (useradd) and looked up
@@ -73,7 +65,6 @@ fn the_first_confined_execution_is_attested_or_exactly_refused() {
         b"bootstrap-payload",
         identity.map(|(uid, _)| uid),
         identity.map(|(_, gid)| gid),
-        engine_manifest(),
         &run_identity(),
         &SIGNING_SEED,
         "2026-08-05T12:00:00Z",
@@ -111,7 +102,12 @@ fn the_first_confined_execution_is_attested_or_exactly_refused() {
             // The ledger is exact: what the engine applies, and nothing more.
             assert_eq!(
                 attestation["effectiveControls"],
-                serde_json::json!(["output_bounds", "process_isolation", "resource_limits"])
+                serde_json::json!([
+                    "output_bounds",
+                    "process_isolation",
+                    "resource_limits",
+                    "worker_transport_isolation"
+                ])
             );
         } else {
             // Linux without the arranged identity: refused, never degraded.

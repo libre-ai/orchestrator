@@ -12,6 +12,7 @@ const HOST_PREFIX = `${CRATE_ROOT}/src/host/`;
 const ALLOWED_DEPENDENCIES = new Set([
   "ed25519-dalek",
   "libre-ai-contract-types",
+  "rustix",
   "serde",
   "serde_jcs",
   "serde_json",

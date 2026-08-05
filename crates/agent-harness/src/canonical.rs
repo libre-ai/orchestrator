@@ -75,6 +75,16 @@ pub(crate) fn hex_to_bytes32(hex: &str) -> Option<[u8; 32]> {
     Some(bytes)
 }
 
+/// SHA-256 of raw bytes, lowercase hex — the content address of a file that
+/// is not a JSON document to canonicalize.
+pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
+    let mut digest = String::with_capacity(64);
+    for byte in Sha256::digest(bytes) {
+        let _ = write!(&mut digest, "{byte:02x}");
+    }
+    digest
+}
+
 /// SHA-256 over the RFC 8785 (JCS) canonical form, lowercase hex — the digest
 /// preimage rule every locked contract shares
 /// (`contracts/agent-orchestration/SEMANTICS.md`).

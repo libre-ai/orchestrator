@@ -1,4 +1,5 @@
 use crate::attestation::{ArtifactRef, AttestationInputs, sign_attestation};
+use crate::canonical::sha256_hex;
 use crate::confinement::{ConfinementPlan, plan_wrapper_chain};
 use crate::controls::{HostFacts, resolve_controls};
 use crate::host::binding::RunBinding;
@@ -43,6 +44,13 @@ pub struct RunIdentity {
     pub signing_key_id: String,
 }
 
+/// The engine manifest this build carries, embedded so the identity the
+/// attestation binds is a property of the binary rather than of its caller.
+const ENGINE_MANIFEST: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/profiles/engine-manifest.v1.json"
+));
+
 const PLATFORM: &str = if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
     "linux-x86_64"
 } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
@@ -64,7 +72,12 @@ fn gather_host_facts() -> HostFacts {
         .output()
         .map(|probe| String::from_utf8_lossy(&probe.stdout).trim() == "0")
         .unwrap_or(false);
-    HostFacts::new(PLATFORM, euid_is_root, tool_present("setpriv"))
+    HostFacts::new(
+        PLATFORM,
+        euid_is_root,
+        tool_present("setpriv"),
+        crate::host::peer::peer_credentials_readable(),
+    )
 }
 
 /// Absolute, fixed candidates only: no PATH lookup, so nothing the caller
@@ -90,7 +103,9 @@ fn host_plan(dedicated_uid: Option<u32>, dedicated_gid: Option<u32>) -> Confinem
     let (Some(uid), Some(gid)) = (dedicated_uid, dedicated_gid) else {
         return ConfinementPlan::unprivileged();
     };
-    let mut plan = ConfinementPlan::privileged(uid, gid, &setpriv);
+    // The locked profile fixes verifyOsPeer const true, so every real run
+    // asks the kernel to name its peer.
+    let mut plan = ConfinementPlan::privileged(uid, gid, &setpriv).with_peer_verification();
     if let Some(setsid) = tool_path("setsid") {
         plan = plan.with_setsid(&setsid);
     }
@@ -119,7 +134,6 @@ pub fn run_confined_attested(
     payload: &[u8],
     dedicated_uid: Option<u32>,
     dedicated_gid: Option<u32>,
-    engine_manifest: ArtifactRef,
     identity: &RunIdentity,
     signing_seed: &[u8; 32],
     generated_at: &str,
@@ -155,6 +169,16 @@ pub fn run_confined_attested(
     // distinct fields precisely so a narrower confinement cannot pass for an
     // honoured one (K4 rounds 1 and 2).
     let effective_digest = effective_profile_digest(profile_document)?;
+
+    // The engine identity is the harness's own fact, never the caller's: the
+    // manifest travels with the crate and its digest is recomputed here, then
+    // held to what the profile pinned (round 3 verdict on 0ab2a20).
+    let pinned = profile.engine_manifest();
+    let engine_digest = sha256_hex(ENGINE_MANIFEST.as_bytes());
+    if pinned.digest != engine_digest {
+        return Err(HarnessRefusal::ControlNotEnforceable.into());
+    }
+    let engine_manifest = ArtifactRef::new(&pinned.id, &engine_digest, &pinned.media_type);
     // The run's own token: the response must carry it, or it is not this
     // run's response (`runBoundToken`, const true in the locked profile).
     let binding = RunBinding::fresh()?;
