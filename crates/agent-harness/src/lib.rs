@@ -12,6 +12,7 @@
 //! OS capability at this stage — spawning a confined local process. The
 //! boundary is mechanically enforced by `verification/agent-harness/`.
 
+mod attestation;
 mod canonical;
 mod controls;
 mod fs_policy;
@@ -19,6 +20,10 @@ mod outputs;
 mod profile;
 mod refusal;
 
+pub use attestation::{
+    ArtifactRef, AttestationInputs, attestation_digest, public_key_base64url, sign_attestation,
+    verify_attestation,
+};
 pub use controls::{EffectiveControls, HostFacts, resolve_controls};
 pub use fs_policy::{PathAccess, PathAccessKind, evaluate_path_access};
 pub use outputs::{OutputLedger, OutputScan, admit_scan};
