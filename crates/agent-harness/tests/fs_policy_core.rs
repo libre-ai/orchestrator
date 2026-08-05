@@ -17,6 +17,18 @@ fn profile() -> libre_ai_agent_harness::HarnessProfile {
     parse_profile(&registry, &document).expect("the canonical profile must parse")
 }
 
+/// The canonical profile with its writable set replaced, for matcher tests.
+fn profile_with_writable(pattern: &str) -> libre_ai_agent_harness::HarnessProfile {
+    let mut document: Value =
+        serde_json::from_str(CANONICAL_PROFILE).expect("the canonical profile fixture must parse");
+    document["filesystem"]["writable"] = serde_json::json!([pattern]);
+    let digest =
+        libre_ai_agent_harness::profile_digest(&document).expect("the mutation must digest");
+    document["profileDigest"] = Value::String(digest);
+    let registry = ContractRegistry::embedded().expect("embedded contracts must compile");
+    parse_profile(&registry, &document).expect("the mutated profile must parse")
+}
+
 fn access(path: &str, kind: PathAccessKind) -> PathAccess {
     PathAccess::new(Path::new(path), false, kind)
 }
@@ -104,4 +116,46 @@ fn a_symlink_resolving_outside_the_workspace_names_the_symlink_policy() {
     )
     .expect_err("a symlink escaping the workspace violates the policy");
     assert_eq!(refusal.code(), "harness.symlink_policy_violation");
+}
+
+/// A path segment is not a byte string: slicing it at arbitrary offsets
+/// panics mid-decision. Found by the xhigh review of f27b3c9; a panic is not
+/// a refusal, and the worker chooses the file name.
+#[test]
+fn a_non_ascii_file_name_is_judged_not_panicked_on() {
+    // An intra-segment star is what drives the matcher into the segment's
+    // bytes; `é` sits astride the offset the old matcher sliced at.
+    let profile = profile_with_writable("*.txt");
+    evaluate_path_access(
+        Path::new(ROOT),
+        &access("/ws/café.txt", PathAccessKind::Write),
+        &profile,
+    )
+    .expect("a non-ASCII name matching the writable pattern passes");
+
+    let refusal = evaluate_path_access(
+        Path::new(ROOT),
+        &access("/ws/café.bin", PathAccessKind::Write),
+        &profile,
+    )
+    .expect_err("a non-ASCII name outside the writable set is refused, not a panic");
+    assert_eq!(refusal.code(), "harness.write_outside_writable_set");
+}
+
+/// The matcher must not explode combinatorially on a pattern the profile is
+/// free to carry: the decision has no timeout of its own.
+#[test]
+fn a_multi_star_pattern_decides_in_bounded_time() {
+    let started = std::time::Instant::now();
+    let refusal = evaluate_path_access(
+        Path::new(ROOT),
+        &access(&format!("/ws/{}", "a".repeat(64)), PathAccessKind::Write),
+        &profile_with_writable("a*a*a*a*a*a*a*b"),
+    )
+    .expect_err("the crafted name matches no writable pattern");
+    assert_eq!(refusal.code(), "harness.write_outside_writable_set");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(1),
+        "the glob decision must stay bounded"
+    );
 }

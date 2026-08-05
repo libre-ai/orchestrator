@@ -1,4 +1,5 @@
 use crate::canonical::{base64url_decode, base64url_encode, canonical_sha256, hex_to_bytes32};
+use crate::controls::is_engine_capability;
 use crate::refusal::HarnessRefusal;
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use libre_ai_contract_types::ContractRegistry;
@@ -116,6 +117,15 @@ fn assemble(inputs: &AttestationInputs) -> Result<Value, HarnessRefusal> {
     if inputs.worker_manifest_digests.is_empty() || inputs.effective_controls.is_empty() {
         return Err(HarnessRefusal::AttestationBindingIncomplete);
     }
+    // A control the engine does not offer has no mechanism behind it: signing
+    // it would be the overclaim this crate exists to make impossible.
+    if !inputs
+        .effective_controls
+        .iter()
+        .all(|control| is_engine_capability(control))
+    {
+        return Err(HarnessRefusal::AttestationBindingIncomplete);
+    }
     Ok(json!({
         "schemaVersion": SCHEMA_VERSION,
         "id": inputs.id,
@@ -163,6 +173,42 @@ pub fn sign_attestation(
     Ok(document)
 }
 
+/// What went wrong when an attestation did not verify.
+///
+/// A key that does not decode is the verifier's own input being malformed —
+/// the operator mistyped or padded it. Reporting that with the refusal that
+/// means "this attestation carries no valid signature" tells an operator
+/// their genuine attestation is forged (xhigh review of f27b3c9), so the two
+/// stay distinct. Only `Refused` carries a code of the closed matrix.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VerificationError {
+    MalformedVerifyingKey,
+    Refused(HarnessRefusal),
+}
+
+impl VerificationError {
+    #[must_use]
+    pub const fn is_malformed_key(self) -> bool {
+        matches!(self, Self::MalformedVerifyingKey)
+    }
+
+    /// The matrix code of a refusal about the attestation. A malformed key is
+    /// not a verdict about the attestation and carries no matrix code.
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::MalformedVerifyingKey => "harness.verifying_key_malformed",
+            Self::Refused(refusal) => refusal.code(),
+        }
+    }
+}
+
+impl From<HarnessRefusal> for VerificationError {
+    fn from(refusal: HarnessRefusal) -> Self {
+        Self::Refused(refusal)
+    }
+}
+
 /// Journey 6: an operator holding only the attestation and a public key
 /// re-verifies the binding without access to the run, the worker or the
 /// harness that produced it.
@@ -170,40 +216,43 @@ pub fn verify_attestation(
     registry: &ContractRegistry,
     document: &Value,
     public_key_base64url: &str,
-) -> Result<(), HarnessRefusal> {
+) -> Result<(), VerificationError> {
     let issues = registry
         .validate(ATTESTATION_SCHEMA, document)
-        .map_err(|_| HarnessRefusal::AttestationBindingIncomplete)?;
+        .map_err(|_| VerificationError::from(HarnessRefusal::AttestationBindingIncomplete))?;
     if !issues.is_empty() {
-        return Err(HarnessRefusal::AttestationBindingIncomplete);
+        return Err(HarnessRefusal::AttestationBindingIncomplete.into());
     }
     let declared = document[DIGEST_FIELD]
         .as_str()
-        .ok_or(HarnessRefusal::AttestationBindingIncomplete)?;
+        .ok_or(VerificationError::from(
+            HarnessRefusal::AttestationBindingIncomplete,
+        ))?;
     let recomputed = attestation_digest(document)?;
     if declared != recomputed {
         // The signature may be intact, but it attests different content:
         // this document is not validly signed.
-        return Err(HarnessRefusal::AttestationUnsigned);
+        return Err(HarnessRefusal::AttestationUnsigned.into());
     }
     let signature_text = document[SIGNATURE_FIELD]
         .as_str()
-        .ok_or(HarnessRefusal::AttestationUnsigned)?;
-    let signature_bytes =
-        base64url_decode(signature_text).ok_or(HarnessRefusal::AttestationUnsigned)?;
-    let signature =
-        Signature::from_slice(&signature_bytes).map_err(|_| HarnessRefusal::AttestationUnsigned)?;
+        .ok_or(VerificationError::from(HarnessRefusal::AttestationUnsigned))?;
+    let signature_bytes = base64url_decode(signature_text)
+        .ok_or(VerificationError::from(HarnessRefusal::AttestationUnsigned))?;
+    let signature = Signature::from_slice(&signature_bytes)
+        .map_err(|_| VerificationError::from(HarnessRefusal::AttestationUnsigned))?;
+    // The key is the verifier's input, not part of the attestation.
     let key_bytes =
-        base64url_decode(public_key_base64url).ok_or(HarnessRefusal::AttestationUnsigned)?;
+        base64url_decode(public_key_base64url).ok_or(VerificationError::MalformedVerifyingKey)?;
     let key_array: [u8; 32] = key_bytes
         .try_into()
-        .map_err(|_| HarnessRefusal::AttestationUnsigned)?;
-    let verifying_key =
-        VerifyingKey::from_bytes(&key_array).map_err(|_| HarnessRefusal::AttestationUnsigned)?;
+        .map_err(|_| VerificationError::MalformedVerifyingKey)?;
+    let verifying_key = VerifyingKey::from_bytes(&key_array)
+        .map_err(|_| VerificationError::MalformedVerifyingKey)?;
     let message = signed_message(declared)?;
     verifying_key
         .verify(&message, &signature)
-        .map_err(|_| HarnessRefusal::AttestationUnsigned)
+        .map_err(|_| VerificationError::Refused(HarnessRefusal::AttestationUnsigned))
 }
 
 /// The unpadded base64url form of the public key belonging to a signing seed

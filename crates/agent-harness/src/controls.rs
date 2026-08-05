@@ -23,6 +23,13 @@ const ENGINE_CAPABILITIES: [&str; 4] = [
 /// review exist (docs/apps/harness.md, non-goals).
 const CLOSED_TRANSPORT_KINDS: [&str; 1] = ["private-network-namespace"];
 
+/// Whether the engine offers a capability at all. The attestation signer
+/// consults this so a control identifier can never be signed without a
+/// mechanism behind it (xhigh review of f27b3c9).
+pub(crate) fn is_engine_capability(capability: &str) -> bool {
+    ENGINE_CAPABILITIES.contains(&capability)
+}
+
 /// Host observations the pure control resolution decides on. Gathered by the
 /// host layer; constructed directly in tests.
 #[derive(Clone, Debug)]

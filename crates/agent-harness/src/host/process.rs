@@ -32,6 +32,7 @@ pub struct ConfinedOutcome {
     output: Vec<u8>,
     truncated: bool,
     timed_out: bool,
+    capture_failed: bool,
     exit_ok: bool,
 }
 
@@ -49,6 +50,15 @@ impl ConfinedOutcome {
     #[must_use]
     pub const fn timed_out(&self) -> bool {
         self.timed_out
+    }
+
+    /// The capture ended on a transport error rather than on EOF, so the
+    /// output is short by an unknown amount. Reported rather than swallowed:
+    /// an incomplete capture that looks complete is signed as complete
+    /// (xhigh review of f27b3c9).
+    #[must_use]
+    pub const fn capture_failed(&self) -> bool {
+        self.capture_failed
     }
 
     #[must_use]
@@ -119,6 +129,7 @@ pub fn spawn_confined(
     let mut output = Vec::with_capacity(cap.min(65_536));
     let mut truncated = false;
     let mut timed_out = false;
+    let mut capture_failed = false;
     let mut buffer = [0u8; 4_096];
     loop {
         if started.elapsed() >= limits.max_duration {
@@ -141,19 +152,26 @@ pub fn spawn_confined(
             }
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
             Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {}
-            Err(_) => break,
+            Err(_) => {
+                // Neither EOF nor a bound: the transport failed and what was
+                // read is short by an unknown amount.
+                capture_failed = true;
+                reap(&mut child, plan);
+                break;
+            }
         }
     }
 
     let exit_ok = child
         .wait()
-        .map(|status| status.success() && !timed_out && !truncated)
+        .map(|status| status.success() && !timed_out && !truncated && !capture_failed)
         .unwrap_or(false);
 
     Ok(ConfinedOutcome {
         output,
         truncated,
         timed_out,
+        capture_failed,
         exit_ok,
     })
 }

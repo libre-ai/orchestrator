@@ -150,9 +150,21 @@ pub fn run_confined_attested(
     let chain = plan_wrapper_chain(&profile.process(), &plan)?;
     let outcome = spawn_confined(program, args, payload, &workspace, &limits, &plan, &chain)?;
 
+    // KNOWN LIMIT (xhigh review of f27b3c9): this ledger lives for one spawn
+    // and receives one admit, so maxTotalBytes only ever meets a value the
+    // per-tool bound already capped. It becomes a real accumulator when a run
+    // spans several tool invocations — the surface that does not exist yet.
+    // Left visible rather than removed: the bound is unreachable, not wrong.
     let mut ledger = OutputLedger::new(profile.max_bytes_per_tool(), profile.max_total_bytes());
     ledger.admit(outcome.output().len() as u64, outcome.truncated())?;
-    admit_scan(OutputScan::Complete)?;
+    // The scan can only vouch for what was captured: a transport failure
+    // leaves the output short by an unknown amount, which the matrix already
+    // treats as an unscanned output (xhigh review of f27b3c9).
+    admit_scan(if outcome.capture_failed() {
+        OutputScan::Interrupted
+    } else {
+        OutputScan::Complete
+    })?;
     if !outcome.exit_ok() {
         return Err(RunError::WorkerFault);
     }

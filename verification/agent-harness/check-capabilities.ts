@@ -73,9 +73,14 @@ export function forbiddenEverywhere(path: string, source: string): string[] {
   for (const [label, pattern] of FORBIDDEN_SOURCE_PATTERNS) {
     if (pattern.test(source)) failures.push(`capability-forbidden:${path}:${label}`);
   }
+  // Comments are stripped before the scan: the previous exemption was a
+  // substring test, so `unsafe { … } // forbid(unsafe_code)` bought a pass
+  // while prose about unsafety failed the gate (xhigh review of f27b3c9).
+  // The crate-level attribute is the one legitimate occurrence.
   const executableUnsafe = source
     .split("\n")
-    .some((line) => !line.includes("forbid(unsafe_code)") && /\bunsafe\b/.test(line));
+    .map((line) => line.replace(/\/\/.*$/u, "").replace(/^\s*#!?\[[^\]]*\]\s*$/u, ""))
+    .some((line) => /\bunsafe\b/.test(line));
   if (executableUnsafe) failures.push(`unsafe-forbidden:${path}`);
   return failures;
 }
@@ -93,7 +98,7 @@ export function forbiddenOutsideHost(path: string, source: string): string[] {
 export function forbiddenDependencySections(manifest: string): string[] {
   const failures: string[] = [];
   for (const line of manifest.split("\n")) {
-    const section = /^\[([^\]]+)\](?:\s*#.*)?$/.exec(line.trim())?.[1];
+    const section = SECTION_HEADER.exec(line.trim())?.[1];
     const alternateDependencySection =
       section !== undefined &&
       section !== "dependencies" &&
@@ -105,11 +110,16 @@ export function forbiddenDependencySections(manifest: string): string[] {
   return failures;
 }
 
-function dependencyNames(manifest: string): string[] {
+// `[[bench]]` and `[[test]]` are sections as much as `[dependencies]` is;
+// a header the parser fails to see leaves it inside the previous section and
+// turns that block's keys into dependency names (xhigh review of f27b3c9).
+const SECTION_HEADER = /^\[\[?([^\]]+)\]\]?(?:\s*#.*)?$/u;
+
+export function dependencyNames(manifest: string): string[] {
   const names: string[] = [];
   let inDependencies = false;
   for (const line of manifest.split("\n")) {
-    const section = /^\[([^\]]+)\](?:\s*#.*)?$/.exec(line.trim())?.[1];
+    const section = SECTION_HEADER.exec(line.trim())?.[1];
     if (section !== undefined) {
       inDependencies = section === "dependencies";
       continue;

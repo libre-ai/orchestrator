@@ -53,17 +53,44 @@ fn glob_matches(pattern: &str, path: &str) -> bool {
         }
     }
 
+    /// Match one segment, over characters rather than bytes, with a single
+    /// backtrack point rather than a recursive split at every offset.
+    ///
+    /// The byte-offset recursion this replaces had two defects the xhigh
+    /// review of f27b3c9 found: it sliced at arbitrary offsets, so a
+    /// non-ASCII name panicked mid-decision instead of being judged; and it
+    /// explored every split point for every star, so a profile pattern with
+    /// a handful of stars turned a policy decision into 35 seconds of CPU.
+    /// A panic and a hang are both refusals the caller never receives.
     fn segment_matches(pattern: &str, segment: &str) -> bool {
-        match pattern.split_once('*') {
-            None => pattern == segment,
-            Some((prefix, rest)) => {
-                if !segment.starts_with(prefix) {
-                    return false;
-                }
-                let remainder = &segment[prefix.len()..];
-                (0..=remainder.len()).any(|skip| segment_matches(rest, &remainder[skip..]))
+        let pattern: Vec<char> = pattern.chars().collect();
+        let segment: Vec<char> = segment.chars().collect();
+        let (mut p, mut s) = (0usize, 0usize);
+        // The last star seen, and where the segment stood when it was seen:
+        // the one place the match may resume from.
+        let mut star: Option<usize> = None;
+        let mut resume = 0usize;
+
+        while s < segment.len() {
+            if p < pattern.len() && pattern[p] == segment[s] {
+                p += 1;
+                s += 1;
+            } else if p < pattern.len() && pattern[p] == '*' {
+                star = Some(p);
+                resume = s;
+                p += 1;
+            } else if let Some(last_star) = star {
+                p = last_star + 1;
+                resume += 1;
+                s = resume;
+            } else {
+                return false;
             }
         }
+        while p < pattern.len() && pattern[p] == '*' {
+            p += 1;
+        }
+        p == pattern.len()
     }
 
     let pattern: Vec<&str> = pattern.split('/').collect();

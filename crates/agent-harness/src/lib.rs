@@ -28,8 +28,8 @@ pub use host::{
 };
 
 pub use attestation::{
-    ArtifactRef, AttestationInputs, attestation_digest, public_key_base64url, sign_attestation,
-    verify_attestation,
+    ArtifactRef, AttestationInputs, VerificationError, attestation_digest, public_key_base64url,
+    sign_attestation, verify_attestation,
 };
 pub use confinement::{ConfinementPlan, ProcessPrescription, WrapperChain, plan_wrapper_chain};
 pub use controls::{EffectiveControls, HostFacts, resolve_controls};
