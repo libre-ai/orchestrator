@@ -4,5 +4,7 @@
 //! modules; nothing here decides policy.
 
 mod fs;
+mod process;
 
 pub use fs::WorkspaceObserver;
+pub use process::{ConfinedOutcome, ConfinementPlan, SpawnLimits, spawn_confined};
