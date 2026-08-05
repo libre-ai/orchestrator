@@ -11,3 +11,12 @@
 //! Everything outside `host` is pure and hostless; `host` holds exactly one
 //! OS capability at this stage — spawning a confined local process. The
 //! boundary is mechanically enforced by `verification/agent-harness/`.
+
+mod canonical;
+mod profile;
+mod refusal;
+
+pub use profile::{
+    HarnessProfile, ResolvedProfile, parse_profile, profile_digest, resolve_profile,
+};
+pub use refusal::HarnessRefusal;
