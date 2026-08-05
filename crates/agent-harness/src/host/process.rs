@@ -170,6 +170,7 @@ pub fn spawn_confined(
     let mut truncated = false;
     let mut timed_out = write_timed_out;
     let mut capture_failed = false;
+    let mut collected: Option<std::process::ExitStatus> = None;
     let mut buffer = [0u8; 4_096];
     loop {
         // A run that could not deliver its payload has nothing to read back.
@@ -185,8 +186,15 @@ pub fn spawn_confined(
             // EOF only says the descriptors are closed, not that the group
             // is gone: a descendant that closed its inherited fds outlived
             // every path that produced an attestation (round 2 security
-            // verdict, blocking finding 1).
+            // verdict, blocking finding 1). The worker itself is given the
+            // remaining time to exit on its own — killing a worker that just
+            // finished would turn its success into a signal — and only then
+            // is the group cleared of whatever it left behind.
             Ok(0) => {
+                collected = wait_within(&mut child, started, limits.max_duration);
+                if collected.is_none() {
+                    timed_out = true;
+                }
                 reap(&mut child, plan);
                 break;
             }
@@ -221,12 +229,11 @@ pub fn spawn_confined(
         None => (output, false),
     };
 
-    let exit_ok = child
-        .wait()
-        .map(|status| {
+    let exit_ok = collected
+        .map_or_else(|| child.wait().ok(), Some)
+        .is_some_and(|status| {
             status.success() && !timed_out && !truncated && !capture_failed && run_binding_proved
-        })
-        .unwrap_or(false);
+        });
 
     Ok(ConfinedOutcome {
         output,
@@ -236,6 +243,29 @@ pub fn spawn_confined(
         run_binding_proved,
         exit_ok,
     })
+}
+
+/// Give the worker what remains of its duration bound to exit on its own.
+///
+/// Returns its status, or `None` if the bound ran out first — a worker that
+/// closed its descriptors and kept running is a timeout, not a success.
+fn wait_within(
+    child: &mut Child,
+    started: Instant,
+    max_duration: Duration,
+) -> Option<std::process::ExitStatus> {
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Some(status),
+            Ok(None) => {
+                if started.elapsed() >= max_duration {
+                    return None;
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Err(_) => return None,
+        }
+    }
 }
 
 /// Kill the worker's whole process group, not just its leader.
