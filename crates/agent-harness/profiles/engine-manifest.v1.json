@@ -1,11 +1,6 @@
 {
   "name": "libre-ai-agent-harness-host-engine",
-  "version": "0.2.0",
-  "capabilities": [
-    "output_bounds",
-    "process_isolation",
-    "resource_limits",
-    "worker_transport_isolation"
-  ],
-  "notes": "The harness host layer is itself the sandbox engine of ADR-0018 D2: local process confinement only — no mounts, no namespaces, no container. filesystem_confinement is deliberately ABSENT: bounding a worker's own syscalls to the workspace needs chroot or a mount namespace, both outside this stage, so a profile requiring it is refused (denyOnMissing) rather than attested. The path-handling machinery exists and holds for accesses the harness itself performs; it does not bound the worker's direct access, which is limited by the dedicated identity's DAC alone."
+  "version": "0.3.0",
+  "capabilities": ["output_bounds", "process_isolation", "resource_limits"],
+  "notes": "The harness host layer is itself the sandbox engine of ADR-0018 D2: local process confinement only — no mounts, no namespaces, no container. filesystem_confinement is deliberately ABSENT: bounding a worker's own syscalls to the workspace needs chroot or a mount namespace, both outside this stage, so a profile requiring it is refused (denyOnMissing) rather than attested. The path-handling machinery exists and holds for accesses the harness itself performs; it does not bound the worker's direct access, which is limited by the dedicated identity's DAC alone. worker_transport_isolation is absent for a measured reason: the transport carries a real per-run token, but SO_PEERCRED on an anonymous socketpair returns the creating process's credentials at both ends, so verifyOsPeer cannot be applied over this transport and the capability would advertise more than the engine does."
 }

@@ -8,6 +8,11 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+/// How long a single send may block before the phase clock is consulted
+/// again. Short enough that the phase bound is honoured to the slice, long
+/// enough not to spin.
+const WRITE_SLICE: Duration = Duration::from_millis(50);
+
 /// Output and duration bounds of one confined spawn.
 #[derive(Clone, Debug)]
 pub struct SpawnLimits {
@@ -127,31 +132,49 @@ pub fn spawn_confined(
     let mut sender = harness_end
         .try_clone()
         .map_err(|_| HarnessRefusal::ControlNotEnforceable)?;
-    // The duration bound covers the write too: a worker that never drains
-    // stdin used to block here, before the clock started and before any
-    // timeout existed (round 2 security verdict, blocking finding 2).
+    // The bound is on the PHASE, not on each syscall: SO_SNDTIMEO rearms on
+    // every send, so a worker draining one byte per window would extend the
+    // write without limit while the clock it is supposedly subject to was
+    // never consulted (round 4 architecture verdict, blocking finding 1).
     sender
-        .set_write_timeout(Some(limits.max_duration))
+        .set_write_timeout(Some(WRITE_SLICE))
         .map_err(|_| HarnessRefusal::ControlNotEnforceable)?;
-    // A write that cannot complete within the bound is the bound firing, not
-    // a control that could not be applied: the run ends timed out, with the
-    // group reaped, instead of the harness blocking forever.
+    let framed = binding.frame(payload);
+    let mut written = 0usize;
     let mut write_timed_out = false;
-    if sender.write_all(&binding.frame(payload)).is_err() {
-        write_timed_out = true;
+    while written < framed.len() {
+        if started.elapsed() >= limits.max_duration {
+            write_timed_out = true;
+            break;
+        }
+        match sender.write(&framed[written..]) {
+            // The worker closed its input: stop writing, keep whatever it
+            // already answered.
+            Ok(0) => break,
+            Ok(count) => written += count,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) => {}
+            // EPIPE and friends: the worker is gone, which a worker that has
+            // already answered legitimately is. Read what it left rather
+            // than discarding it (round 4 architecture verdict, major 3).
+            Err(_) => break,
+        }
+    }
+    if write_timed_out {
         reap(&mut child, plan);
     }
     let _ = sender.shutdown(std::net::Shutdown::Write);
 
     let mut receiver = harness_end;
-    // Only when there is something to read: after a failed write the socket
-    // may already be in an error state, and a run that could not deliver its
-    // payload has nothing to wait for.
-    if !write_timed_out {
-        receiver
-            .set_read_timeout(Some(Duration::from_millis(50)))
-            .map_err(|_| HarnessRefusal::ControlNotEnforceable)?;
-    }
+    // Best effort: a peer that closed its input may leave the socket in a
+    // state that refuses the option, and a worker which answered before
+    // closing still has bytes worth draining (round 4, major finding 3). A
+    // socket that cannot be armed simply fails its reads, which the capture
+    // reports rather than swallows.
+    let _ = receiver.set_read_timeout(Some(Duration::from_millis(50)));
 
     // The frame is transport, not content: the profile's byte bound must not
     // be spent on the run token (round 3 security verdict, minor).
@@ -183,11 +206,16 @@ pub fn spawn_confined(
             // finished would turn its success into a signal — and only then
             // is the group cleared of whatever it left behind.
             Ok(0) => {
+                // The group is captured BEFORE the wait: try_wait reaps the
+                // zombie and frees the pid, and killing a recycled pid as
+                // root is the hazard std::process::Child::kill refuses
+                // outright (round 4 architecture verdict, major finding 2).
+                let group = child.id();
                 collected = wait_within(&mut child, started, limits.max_duration);
                 if collected.is_none() {
                     timed_out = true;
                 }
-                reap(&mut child, plan);
+                reap_group(group, plan);
                 break;
             }
             Ok(count) => {
@@ -270,7 +298,18 @@ fn wait_within(
 /// the direct kill remains as the last resort if the signal cannot be sent.
 fn reap(child: &mut Child, plan: &ConfinementPlan) {
     if plan.kills_process_group() {
-        let group = format!("-{}", child.id());
+        reap_group(child.id(), plan);
+        return;
+    }
+    let _ = child.kill();
+}
+
+/// Kill a process group by an identifier captured while the harness still
+/// owned it. Never call this with a pid that has already been waited on
+/// unless the group was captured beforehand.
+fn reap_group(group: u32, plan: &ConfinementPlan) {
+    if plan.kills_process_group() {
+        let group = format!("-{group}");
         let sent = Command::new("/bin/kill")
             .arg("-KILL")
             .arg("--")
@@ -281,9 +320,6 @@ fn reap(child: &mut Child, plan: &ConfinementPlan) {
             .status()
             .map(|status| status.success())
             .unwrap_or(false);
-        if sent {
-            return;
-        }
+        let _ = sent;
     }
-    let _ = child.kill();
 }
