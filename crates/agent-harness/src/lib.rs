@@ -23,8 +23,9 @@ mod profile;
 mod refusal;
 
 pub use host::{
-    ConfinedOutcome, RunBinding, RunError, RunIdentity, SpawnLimits, WorkspaceObserver,
-    canonical_workspace, run_confined_attested, spawn_confined,
+    ConfinedOutcome, ENGINE_MANIFEST, RunBinding, RunError, RunIdentity, SpawnLimits,
+    WorkspaceObserver, canonical_workspace, engine_manifest_digest, run_confined_attested,
+    spawn_confined,
 };
 
 pub use attestation::{
@@ -32,7 +33,7 @@ pub use attestation::{
     sign_attestation, verify_attestation,
 };
 pub use confinement::{ConfinementPlan, ProcessPrescription, WrapperChain, plan_wrapper_chain};
-pub use controls::{EffectiveControls, HostFacts, resolve_controls};
+pub use controls::{EffectiveControls, HostFacts, engine_capabilities, resolve_controls};
 pub use fs_policy::{PathAccess, PathAccessKind, evaluate_path_access};
 pub use outputs::{OutputLedger, OutputScan, admit_scan};
 pub use profile::{

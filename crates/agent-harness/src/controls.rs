@@ -30,6 +30,12 @@ const CLOSED_TRANSPORT_KINDS: [&str; 1] = ["private-network-namespace"];
 /// Whether the engine offers a capability at all. The attestation signer
 /// consults this so a control identifier can never be signed without a
 /// mechanism behind it (xhigh review of f27b3c9).
+/// What the engine offers, in the order the manifest publishes it.
+#[must_use]
+pub fn engine_capabilities() -> &'static [&'static str] {
+    &ENGINE_CAPABILITIES
+}
+
 pub(crate) fn is_engine_capability(capability: &str) -> bool {
     ENGINE_CAPABILITIES.contains(&capability)
 }

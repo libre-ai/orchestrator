@@ -25,7 +25,7 @@
   "sandboxEngine": {
     "manifest": {
       "id": "urn:libre-ai:manifest:agent-harness-host-engine-1",
-      "digest": "94ec3b12229db8d8a00642188e435e7df9a702ad52ab5220bdb95cafa9f00344",
+      "digest": "e9f19edd36ce5a2c2f8905ecbad136bd754863afe06807d7ef4cfcda40e238c6",
       "mediaType": "application/json"
     },
     "requiredCapabilities": ["output_bounds", "process_isolation", "resource_limits"],
@@ -77,5 +77,5 @@
     "bindKernelCapabilities": true,
     "signed": true
   },
-  "profileDigest": "b7e0e88be5155d86204f41049be529b18b6b21e824f788b46a83a02911117781"
+  "profileDigest": "8109201c0973cf06a898b5bd395bc2576bd1ce404b34339a5c36fd94f0875dcb"
 }

@@ -12,4 +12,6 @@ pub use binding::RunBinding;
 
 pub use fs::{WorkspaceObserver, canonical_workspace};
 pub use process::{ConfinedOutcome, SpawnLimits, spawn_confined};
-pub use run::{RunError, RunIdentity, run_confined_attested};
+pub use run::{
+    ENGINE_MANIFEST, RunError, RunIdentity, engine_manifest_digest, run_confined_attested,
+};

@@ -44,9 +44,17 @@ pub struct RunIdentity {
     pub signing_key_id: String,
 }
 
+/// The content address of the manifest this build carries. Public so a test
+/// can hold the profile's pin to it: the chain manifest → pin → profile
+/// address is maintained by hand and has drifted twice.
+#[must_use]
+pub fn engine_manifest_digest() -> String {
+    sha256_hex(ENGINE_MANIFEST.as_bytes())
+}
+
 /// The engine manifest this build carries, embedded so the identity the
 /// attestation binds is a property of the binary rather than of its caller.
-const ENGINE_MANIFEST: &str = include_str!(concat!(
+pub const ENGINE_MANIFEST: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/profiles/engine-manifest.v1.json"
 ));
@@ -167,7 +175,7 @@ pub fn run_confined_attested(
     // manifest travels with the crate and its digest is recomputed here, then
     // held to what the profile pinned (round 3 verdict on 0ab2a20).
     let pinned = profile.engine_manifest();
-    let engine_digest = sha256_hex(ENGINE_MANIFEST.as_bytes());
+    let engine_digest = engine_manifest_digest();
     if pinned.digest != engine_digest {
         return Err(HarnessRefusal::ControlNotEnforceable.into());
     }
