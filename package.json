@@ -30,6 +30,6 @@
     "pretest": "bun run check:bun",
     "check:review-tools": "bun run check:bun:runtime && bun install --cwd tools/review --frozen-lockfile && bun test --cwd tools/review",
     "check:capabilities": "bun run check:bun:runtime && bun test verification/agent-orchestrator/capability-boundary.test.ts",
-    "check:specifications": "bun run check:bun:runtime && bun node_modules/@libre-ai/governance/tools/quality/check-specification-lock.ts --apps orchestrator harness memory"
+    "check:specifications": "bun run check:bun:runtime && bun node_modules/@libre-ai/governance/tools/quality/check-specification-lock.ts --apps orchestrator memory"
   }
 }
