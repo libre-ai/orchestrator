@@ -18,6 +18,7 @@ import {
   type ReviewPlan,
   reconcileReplay,
   replayPassStatuses,
+  resolveReviewProtocol,
   runBatched,
   validateVerdict,
 } from "./fanout-core";
@@ -219,8 +220,9 @@ async function main(): Promise<void> {
     console.error("usage: bun tools/review/fanout.ts <plan.json> [--dry-run] [--force]");
     process.exit(2);
   }
-  if (!existsSync("docs/reviews/AGENT-REVIEW-PROTOCOL.md")) {
-    console.error("run from the repository root (docs/reviews/AGENT-REVIEW-PROTOCOL.md not found)");
+  const protocol = resolveReviewProtocol(existsSync);
+  if (!protocol.ok) {
+    console.error(protocol.message);
     process.exit(2);
   }
 
