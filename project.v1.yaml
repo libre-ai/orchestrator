@@ -50,7 +50,7 @@ maturity: usable
 confidence: medium
 exposure: spec-published
 freshness:
-  last_verified_on: "2026-07-30"
+  last_verified_on: "2026-08-18"
 scope_stability: stable
 benchmark:
   none: "n/a (shared brick, no external parity target)"
@@ -77,4 +77,16 @@ phases:
           montée conjointe de la version de la crate et entrée au journal des ruptures. Fermé le
           jour où les deux ruptures, rejouées séparément, font échouer la commande.
         weight: 1
-        status: pending
+        status: accepted
+        evidence:
+          date: "2026-08-18"
+          reference: >-
+            tests/compat_surface.rs (PR #15, commit 7f62294) — cargo test --locked ; instantané de
+            la surface publique dans tests/compat/public_surface.snapshot (20 symboles), liste
+            exhaustive des 24 codes stables dans tests/compat/stable_codes.snapshot (17
+            ControlRefusal + 2 SimulatedEffectDecision + 2 ControlDecision propres + 3 BudgetDecision
+            propres ; BudgetDecision::Chain délègue à OrchestratorEventChainResult::code(), hors
+            périmètre — sdk-rs porte sa propre politique de compatibilité). Les deux ruptures rejouées
+            séparément avant ce commit (symbole retiré de src/lib.rs, valeur de code modifiée dans
+            ControlRefusal) font chacune échouer la commande sans faire échouer l'autre test.
+            Journal des ruptures : docs/compat/BREAKS.md (vide — aucune rupture légitime à ce jour).
