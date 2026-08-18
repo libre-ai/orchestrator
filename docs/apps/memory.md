@@ -1,5 +1,7 @@
 # Memory — Agent Persistent Recall
 
+**DRAFT — Specification Lock pending.** This specification is a locked contract (immutable after pronouncement) under the orchestrator Specification Lock (ADR-0011). Changes to memory schema, classification rules (K2), or envelope integrity (K3) require a new ADR, independent security review, and owner approval. Governance path: Gate → ADR → Specification Lock → Release.
+
 - **Path:** `apps/memory`
 - **Owner:** Polaris / Memory (recall service for agent fleets)
 - **Runtime:** Bun/TypeScript for API + domain logic; Rust for embedding/canonicalization; PostgreSQL + pgvector for durable storage; optional self-hosted embedding engine (Ollama/Jina) for sovereignty
