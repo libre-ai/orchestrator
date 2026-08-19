@@ -219,8 +219,13 @@ async function main(): Promise<void> {
     console.error("usage: bun tools/review/fanout.ts <plan.json> [--dry-run] [--force]");
     process.exit(2);
   }
-  if (!existsSync("docs/reviews/AGENT-REVIEW-PROTOCOL.md")) {
-    console.error("run from the repository root (docs/reviews/AGENT-REVIEW-PROTOCOL.md not found)");
+  // The protocol doc is not vendored in-repo: it resolves from the governance
+  // git-dep (root package.json devDependency), never from a bare repo-root path.
+  const protocolPath = "node_modules/@libre-ai/governance/docs/reviews/AGENT-REVIEW-PROTOCOL.md";
+  if (!existsSync(protocolPath)) {
+    console.error(
+      `run from the repository root with dependencies installed (${protocolPath} not found)`,
+    );
     process.exit(2);
   }
 
