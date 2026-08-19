@@ -1,0 +1,12 @@
+{
+  "subject": "orchestrator",
+  "commit": "ca44eb33ce3ac2e9e39bea6f913be714b974a2c3",
+  "roles": ["security", "quality"],
+  "mode": "specialized-role",
+  "evidence": ["AGENTS.md", "README.md", "Cargo.toml"],
+  "concurrency": 2,
+  "provider": "openai-codex",
+  "model": "gpt-5.6-terra",
+  "thinking": "xhigh",
+  "outputDir": "docs/reviews/orchestrator/ca44eb3"
+}
