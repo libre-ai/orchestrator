@@ -1,0 +1,53 @@
+{
+  "reviewPassId": "rp-ca44eb3-ac506eca-9dee-4d6f-8fc0-b4a229267ead",
+  "role": "quality",
+  "mode": "specialized-role",
+  "commitSha": "ca44eb33ce3ac2e9e39bea6f913be714b974a2c3",
+  "contractHashes": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "82e826d6c8b869626e2c7b06e10033e97c56dcaf3e95795884165bddeb3cfaca"
+    },
+    {
+      "path": "README.md",
+      "sha256": "698b9dee223615248d135d1cc9b46d5601a578cb445d85f1c9b719522e5146dc"
+    },
+    {
+      "path": "Cargo.toml",
+      "sha256": "0885d45d93721b1124f741f6fc4794925a42f51ec4d0a256b233c47fb112a7ab"
+    }
+  ],
+  "commands": [
+    "git status --short && git rev-parse HEAD && git rev-parse --is-inside-work-tree && sha256sum AGENTS.md README.md Cargo.toml",
+    "find . -maxdepth 3 -type f -not -path './.git/*' | LC_ALL=C sort",
+    "find . -iname '*review*protocol*' -o -path '*docs/reviews*'; git show --no-ext-diff --format=fuller --no-patch HEAD; git diff-tree --no-commit-id --name-status -r HEAD; git diff --stat HEAD^ HEAD; git diff --no-ext-diff --unified=80 HEAD^ HEAD",
+    "git diff --check HEAD^ HEAD; rg -n -F -e '9cd1d421d318129db99456d963f4bc1cfad67b33' -e '4fd6e18346672189d3053e07c196c77d127e608d' --glob '!Cargo.lock' --glob '!bun.lock' .; git status --short",
+    "ruby -e 'require \"yaml\"; document = YAML.safe_load_file(\"project.v1.yaml\", aliases: false)'",
+    "ruby -e 'require \"yaml\"; document = YAML.safe_load(File.read(\"project.v1.yaml\"), aliases: false); abort \"project field mismatch\" unless document.fetch(\"project\") == \"orchestrator\"' ; rg --hidden -n -F -C 1 -e '9cd1d421d318129db99456d963f4bc1cfad67b33' -e '4fd6e18346672189d3053e07c196c77d127e608d' package.json bun.lock .github project.v1.yaml; git ls-tree -r --name-only HEAD -- docs/reviews",
+    "rg -n -C 3 -F 'docs/reviews/AGENT-REVIEW-PROTOCOL.md' tools/review/fanout.ts; git ls-tree -r --name-only HEAD -- docs/reviews/AGENT-REVIEW-PROTOCOL.md; git ls-tree -r --name-only HEAD^ -- docs/reviews/AGENT-REVIEW-PROTOCOL.md; git status --porcelain"
+  ],
+  "findings": {
+    "blocking": [
+      {
+        "title": "The mandatory review protocol is absent, making fan-out unusable",
+        "detail": "`docs/reviews/AGENT-REVIEW-PROTOCOL.md` is absent from both HEAD and HEAD^ (zero committed paths). `tools/review/fanout.ts:222-224` terminates with exit 2 when it is absent. Consequently the declared review workflow cannot execute from this checkout; the issue predates this pin-only commit but blocks quality acceptance of the target state."
+      }
+    ],
+    "major": [],
+    "minor": [],
+    "nonBlocking": []
+  },
+  "residualRisks": [
+    "Dynamic quality gates were not run because the review mandate forbids creating or modifying files in the immutable worktree.",
+    "The governance SHA update is internally consistent across project.v1.yaml, package.json, bun.lock, and both workflows."
+  ],
+  "verdict": "reject",
+  "runner": {
+    "orchestrator": "tools/review/fanout.ts",
+    "provider": "openai-codex",
+    "model": "gpt-5.6-terra",
+    "thinking": "xhigh",
+    "startedAt": "2026-08-19T03:15:18.849Z",
+    "durationMs": 175096
+  }
+}

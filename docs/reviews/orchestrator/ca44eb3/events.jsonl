@@ -1,0 +1,12 @@
+{"reviewPassId":"rp-ca44eb3-ac506eca-9dee-4d6f-8fc0-b4a229267ead","role":"quality","type":"pass_start","at":"2026-08-19T03:15:18.849Z","detail":{"commit":"ca44eb33ce3ac2e9e39bea6f913be714b974a2c3","mode":"specialized-role"}}
+{"reviewPassId":"rp-ca44eb3-aa969d2b-4cc4-4bae-afa4-1ee925e5700b","role":"security","type":"pass_start","at":"2026-08-19T03:15:18.849Z","detail":{"commit":"ca44eb33ce3ac2e9e39bea6f913be714b974a2c3","mode":"specialized-role"}}
+{"reviewPassId":"rp-ca44eb3-ac506eca-9dee-4d6f-8fc0-b4a229267ead","role":"quality","type":"worktree_ready","at":"2026-08-19T03:15:18.869Z"}
+{"reviewPassId":"rp-ca44eb3-aa969d2b-4cc4-4bae-afa4-1ee925e5700b","role":"security","type":"worktree_ready","at":"2026-08-19T03:15:18.874Z"}
+{"reviewPassId":"rp-ca44eb3-ac506eca-9dee-4d6f-8fc0-b4a229267ead","role":"quality","type":"agent_call","at":"2026-08-19T03:15:18.870Z","endedAt":"2026-08-19T03:18:13.922Z","detail":{"exitCode":0,"provider":"openai-codex","model":"gpt-5.6-terra","thinking":"xhigh"}}
+{"reviewPassId":"rp-ca44eb3-ac506eca-9dee-4d6f-8fc0-b4a229267ead","role":"quality","type":"verdict_recorded","at":"2026-08-19T03:18:13.943Z","detail":{"outputPath":"docs/reviews/orchestrator/ca44eb3/quality.verdict.json"}}
+{"reviewPassId":"rp-ca44eb3-ac506eca-9dee-4d6f-8fc0-b4a229267ead","role":"quality","type":"worktree_removed","at":"2026-08-19T03:18:13.959Z"}
+{"reviewPassId":"rp-ca44eb3-ac506eca-9dee-4d6f-8fc0-b4a229267ead","role":"quality","type":"pass_end","at":"2026-08-19T03:18:13.960Z","detail":{"ok":true,"durationMs":175113}}
+{"reviewPassId":"rp-ca44eb3-aa969d2b-4cc4-4bae-afa4-1ee925e5700b","role":"security","type":"agent_call","at":"2026-08-19T03:15:18.874Z","endedAt":"2026-08-19T03:18:34.455Z","detail":{"exitCode":0,"provider":"openai-codex","model":"gpt-5.6-terra","thinking":"xhigh"}}
+{"reviewPassId":"rp-ca44eb3-aa969d2b-4cc4-4bae-afa4-1ee925e5700b","role":"security","type":"verdict_recorded","at":"2026-08-19T03:18:34.471Z","detail":{"outputPath":"docs/reviews/orchestrator/ca44eb3/security.verdict.json"}}
+{"reviewPassId":"rp-ca44eb3-aa969d2b-4cc4-4bae-afa4-1ee925e5700b","role":"security","type":"worktree_removed","at":"2026-08-19T03:18:34.483Z"}
+{"reviewPassId":"rp-ca44eb3-aa969d2b-4cc4-4bae-afa4-1ee925e5700b","role":"security","type":"pass_end","at":"2026-08-19T03:18:34.483Z","detail":{"ok":true,"durationMs":195637}}

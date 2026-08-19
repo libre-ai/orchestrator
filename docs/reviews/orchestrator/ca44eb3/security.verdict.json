@@ -1,0 +1,60 @@
+{
+  "reviewPassId": "rp-ca44eb3-aa969d2b-4cc4-4bae-afa4-1ee925e5700b",
+  "role": "security",
+  "mode": "specialized-role",
+  "commitSha": "ca44eb33ce3ac2e9e39bea6f913be714b974a2c3",
+  "contractHashes": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "82e826d6c8b869626e2c7b06e10033e97c56dcaf3e95795884165bddeb3cfaca"
+    },
+    {
+      "path": "README.md",
+      "sha256": "698b9dee223615248d135d1cc9b46d5601a578cb445d85f1c9b719522e5146dc"
+    },
+    {
+      "path": "Cargo.toml",
+      "sha256": "0885d45d93721b1124f741f6fc4794925a42f51ec4d0a256b233c47fb112a7ab"
+    },
+    {
+      "path": "project.v1.yaml",
+      "sha256": "f22798cdd6dbce46e2ec9b5a6e1a142e0e386fe836e67b0125b1ab42f89f3c95"
+    }
+  ],
+  "commands": [
+    "pwd && git status --short && git rev-parse HEAD && git show -s --format='%P%n%H%n%s' HEAD && git diff --check HEAD^ HEAD",
+    "find .. -path '*/docs/reviews/AGENT-REVIEW-PROTOCOL.md' -type f -print && find . -maxdepth 3 -type f -print | sort",
+    "git diff --no-ext-diff --unified=100 c069836f5fecc9028c0377de201549b653f6bd20 ca44eb33ce3ac2e9e39bea6f913be714b974a2c3 --",
+    "shasum -a 256 AGENTS.md README.md Cargo.toml project.v1.yaml",
+    "rg -n -i -C 3 'governance|9cd1d421d318129db99456d963f4bc1cfad67b33|4fd6e18346672189d3053e07c196c77d127e608d' --glob '!bun.lock' --glob '!Cargo.lock' .",
+    "git cat-file -e HEAD:docs/reviews/AGENT-REVIEW-PROTOCOL.md 2>/dev/null; printf 'target-protocol-object-exit=%s\\n' \"$?\"",
+    "rg -n -C 2 'AGENT-REVIEW-PROTOCOL\\.md|run from the repository root' tools/review/fanout.ts tools/review/fanout-core.test.ts",
+    "ruby -e 'require \"yaml\"; YAML.safe_load(File.read(\"project.v1.yaml\"), aliases: false); puts \"project.v1.yaml: YAML syntax valid\"'",
+    "curl -q --fail --silent --show-error --location --proto '=https' --tlsv1.2 'https://api.github.com/repos/libre-ai/governance/commits/9cd1d421d318129db99456d963f4bc1cfad67b33' | jq -r '{sha, verified: .commit.verification.verified, verification_reason: .commit.verification.reason, changed_files: [.files[] | {filename, status, additions, deletions}]}'",
+    "git status --porcelain=v1 && git diff --no-ext-diff --exit-code && git diff --no-ext-diff --cached --exit-code"
+  ],
+  "findings": {
+    "blocking": [
+      {
+        "title": "Le protocole requis est absent et le fan-out de revue est inutilisable",
+        "detail": "`git cat-file -e HEAD:docs/reviews/AGENT-REVIEW-PROTOCOL.md` échoue (exit 128). Or `tools/review/fanout.ts:222-224` quitte avec le code 2 si ce fichier est absent. Le contrôle CI `check:review-tools` ne teste que `fanout-core` et ne couvre pas cette précondition. La revue de sécurité formelle ne peut donc ni consulter son protocole canonique ni être exécutée par l'outil annoncé."
+      }
+    ],
+    "major": [],
+    "minor": [],
+    "nonBlocking": []
+  },
+  "residualRisks": [
+    "Le SHA governance est aligné avec package.json, bun.lock et CI; l'API GitHub le déclare signé et son diff ne contient qu'un ADR. Son objet n'est toutefois pas présent dans la base Git locale.",
+    "Aucun gate Bun n'a été exécuté: node_modules est absent et son installation violerait la contrainte de worktree immuable."
+  ],
+  "verdict": "reject",
+  "runner": {
+    "orchestrator": "tools/review/fanout.ts",
+    "provider": "openai-codex",
+    "model": "gpt-5.6-terra",
+    "thinking": "xhigh",
+    "startedAt": "2026-08-19T03:15:18.849Z",
+    "durationMs": 195625
+  }
+}
