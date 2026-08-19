@@ -217,6 +217,38 @@ export function dedupeJobs(
   return { run, skipped };
 }
 
+// The protocol document lives in libre-ai/governance, not in this repo: a
+// local copy would drift from the one the git-dep pins. Resolve it from the
+// installed dependency instead of assuming a repo-relative path that this
+// repo never carries (2026-08-18 fix — the check used to look for
+// docs/reviews/AGENT-REVIEW-PROTOCOL.md at the repo root, a file that only
+// ever existed inside node_modules/@libre-ai/governance).
+export const GOVERNANCE_PROTOCOL_PATH =
+  "node_modules/@libre-ai/governance/docs/reviews/AGENT-REVIEW-PROTOCOL.md";
+
+export interface ProtocolResolution {
+  readonly ok: boolean;
+  readonly path: string;
+  readonly message?: string;
+}
+
+/**
+ * Locate the review protocol inside the installed @libre-ai/governance
+ * git-dep. `exists` is injected so this stays unit-testable without a real
+ * node_modules tree (same pattern as dedupeJobs' hasRecordedVerdict).
+ */
+export function resolveReviewProtocol(exists: (path: string) => boolean): ProtocolResolution {
+  if (exists(GOVERNANCE_PROTOCOL_PATH)) {
+    return { ok: true, path: GOVERNANCE_PROTOCOL_PATH };
+  }
+  const message = exists("node_modules/@libre-ai/governance")
+    ? `${GOVERNANCE_PROTOCOL_PATH} not found in the installed @libre-ai/governance dependency — ` +
+      "the protocol doc moved or the git-dep pin is stale; check docs/reviews/ in that package"
+    : `${GOVERNANCE_PROTOCOL_PATH} not found — @libre-ai/governance is not installed; ` +
+      "run this from the repository root after `bun install`";
+  return { ok: false, path: GOVERNANCE_PROTOCOL_PATH, message };
+}
+
 export function buildPrompt(job: ReviewJob, evidenceDigest: string): string {
   const scope =
     job.mode === "candidate-integration"
