@@ -1,0 +1,28 @@
+# compat-policy snapshot — symbols re-exported by src/lib.rs (project.v1.yaml,
+# phases[0].exit_criteria[compat-policy]). One symbol per line, order does not
+# matter (tests/compat_surface.rs sorts before comparing). Lines starting with
+# '#' are comments.
+#
+# A legitimate change to this file requires, in the same commit: bumping the
+# crate version in Cargo.toml and adding an entry to docs/compat/BREAKS.md.
+
+BudgetDecision
+CommandCollisionObservation
+CommandReceipt
+ControlAction
+ControlApplication
+ControlCommand
+ControlDecision
+ControlEffect
+ControlPhase
+ControlRefusal
+EventStoreObservation
+PlanBudgetLimits
+RunControlState
+SimulatedEffectDecision
+StartPreflight
+command_fingerprint
+evaluate_budget_event
+evaluate_control
+evaluate_simulated_effect
+parse_control_document
