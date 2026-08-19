@@ -6,6 +6,7 @@ import {
   buildPrompt,
   dedupeJobs,
   extractVerdict,
+  GOVERNANCE_PROTOCOL_PATH,
   guardEvidence,
   type PassReplay,
   parseJournalLines,
@@ -15,6 +16,7 @@ import {
   type ReviewJob,
   reconcileReplay,
   replayPassStatuses,
+  resolveReviewProtocol,
   runBatched,
   validateVerdict,
 } from "./fanout-core";
@@ -123,6 +125,35 @@ describe("dedupeJobs", () => {
     const { run, skipped } = dedupeJobs(jobs, () => true, true);
     expect(run).toHaveLength(1);
     expect(skipped).toHaveLength(0);
+  });
+});
+
+describe("resolveReviewProtocol", () => {
+  test("resolves inside the installed @libre-ai/governance git-dep", () => {
+    const result = resolveReviewProtocol((path) => path === GOVERNANCE_PROTOCOL_PATH);
+    expect(result.ok).toBe(true);
+    expect(result.path).toBe(GOVERNANCE_PROTOCOL_PATH);
+    expect(result.message).toBeUndefined();
+  });
+
+  test("never resolves a repo-root docs/reviews path — that file lives only in governance", () => {
+    const result = resolveReviewProtocol(
+      (path) => path === "docs/reviews/AGENT-REVIEW-PROTOCOL.md",
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  test("explicit error when @libre-ai/governance is not installed at all", () => {
+    const result = resolveReviewProtocol(() => false);
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/not installed/);
+    expect(result.message).toMatch(/bun install/);
+  });
+
+  test("explicit, different error when governance is installed but the doc moved", () => {
+    const result = resolveReviewProtocol((path) => path === "node_modules/@libre-ai/governance");
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/protocol doc moved|git-dep pin is stale/);
   });
 });
 
