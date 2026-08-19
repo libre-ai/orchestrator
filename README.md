@@ -21,8 +21,8 @@ cargo test --locked
 - Maturité : usable
 - Exposition : spec-published
 - Confiance : medium
-- Preuves vérifiées le : 2026-07-30
-- Avancement : 50 % du périmètre actuellement déclaré
+- Preuves vérifiées le : 2026-08-18
+- Avancement : 100 % du périmètre actuellement déclaré
 
 <!-- libre-ai:project-status:end -->
 
