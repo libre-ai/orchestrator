@@ -45,7 +45,7 @@ dependencies:
     pinned: "github:libre-ai/envelope#ad0e1a6d014ee531dd1938ed04c6b678c605dc9c"
   - on: libre-ai/governance
     why: "gabarit de gates consommé en workflows réutilisables et git-dep d'outillage — jamais dupliqué"
-    pinned: "github:libre-ai/governance#767ee84aabfab27be29adb9606584e76e15243b6"
+    pinned: "github:libre-ai/governance#8c238c09efd443a4866459160dac1cfee31d88be"
 maturity: usable
 confidence: medium
 exposure: spec-published
