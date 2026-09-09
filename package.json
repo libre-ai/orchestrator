@@ -32,6 +32,6 @@
     "check:capabilities": "bun run check:bun:runtime && bun test verification/agent-orchestrator/capability-boundary.test.ts",
     "check:specifications": "bun run check:bun:runtime && bun node_modules/@libre-ai/governance/tools/quality/check-specification-lock.ts --apps orchestrator memory",
     "check:memory-draft-sync": "bun run check:bun:runtime && bun tools/quality/check-memory-draft-sync.ts",
-    "check:pattern-catalog": "bun run check:bun:runtime && bun tools/quality/orchestration-pattern-catalog.ts"
+    "check:pattern-catalog": "bun run check:bun:runtime && cd tools/quality/pattern-catalog-coverage && bun test --coverage ../orchestration-pattern-catalog.test.ts && cd ../../.. && bun tools/quality/orchestration-pattern-catalog.ts"
   }
 }

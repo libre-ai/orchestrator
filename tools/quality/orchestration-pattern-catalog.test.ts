@@ -84,6 +84,37 @@ describe("orchestration pattern catalogue", () => {
     expect(codes({ ...validCatalog, patterns: [] })).toContain("catalog.patterns");
   });
 
+  test("rejects objects with non-JSON prototypes at every object boundary", () => {
+    const catalog = Object.assign(Object.create({}), validCatalog);
+    const source = Object.assign(Object.create({}), validCatalog.sources[0]);
+    const pattern = Object.assign(Object.create({}), validCatalog.patterns[0]);
+
+    expect(codes(catalog)).toEqual(["catalog.not-object"]);
+    expect(codes({ ...validCatalog, sources: [source] })).toContain("catalog.source-id");
+    expect(codes({ ...validCatalog, patterns: [pattern] })).toContain("catalog.pattern-id");
+  });
+
+  test("fails closed when prototype inspection is hostile", () => {
+    const hostile = new Proxy(
+      {},
+      {
+        getPrototypeOf: () => {
+          throw new Error("untrusted prototype trap");
+        },
+      },
+    );
+
+    expect(codes(hostile)).toEqual(["catalog.not-object"]);
+  });
+
+  test("rejects malformed nested container values", () => {
+    expect(codes({ ...validCatalog, sources: [null] })).toContain("catalog.source-id");
+    expect(codes({ ...validCatalog, patterns: [null] })).toContain("catalog.pattern-id");
+    expect(codes(withPattern({ candidateContracts: null }))).toContain(
+      "catalog.candidate-contract",
+    );
+  });
+
   test.each([
     ["catalog.source-id", [{ ...validCatalog.sources[0], id: "INVALID" }]],
     ["catalog.source-duplicate", [validCatalog.sources[0], { ...validCatalog.sources[0] }]],

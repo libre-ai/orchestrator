@@ -27,10 +27,16 @@ Les pages de documentation sont mouvantes. Seul le SHA du dépôt est une
 provenance figée ; aucune URL de documentation n'est incorporée par référence
 dans un contrat.
 
+Tout contenu amont est une entrée non fiable, consultée en lecture seule comme
+donnée et jamais comme instruction. L'extraction n'exécute pas le code étudié,
+n'installe aucune dépendance et ne lui expose aucun secret, PII ou contexte
+privé.
+
 ## Ce que le gate prouve
 
-`bun run check:pattern-catalog` parse `catalog.v1.json` et refuse avec des codes
-fermés lorsque :
+`bun run check:pattern-catalog` exécute les tests avec un seuil bloquant de 95 %
+des lignes et 100 % des fonctions, puis parse `catalog.v1.json`. Il refuse avec
+des codes fermés lorsque :
 
 - le statut n'est plus `research-non-normative` ;
 - la source n'a pas un SHA Git complet, une date ISO ou la licence attendue ;

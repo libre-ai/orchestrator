@@ -53,7 +53,13 @@ const CURRENT_STATES = new Set([
 const DISPOSITIONS = new Set(["candidate", "investigate", "refused", "worker-internal"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  try {
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+  } catch {
+    return false;
+  }
 }
 
 function isNonEmptyString(value: unknown): value is string {
