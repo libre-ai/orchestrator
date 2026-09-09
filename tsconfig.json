@@ -16,6 +16,10 @@
     "skipLibCheck": true,
     "types": ["bun"]
   },
-  "include": ["tools/review/**/*.ts"],
+  "include": [
+    "tools/review/**/*.ts",
+    "tools/quality/orchestration-pattern-catalog.ts",
+    "tools/quality/orchestration-pattern-catalog.test.ts"
+  ],
   "exclude": ["node_modules", "target", "tools/review/node_modules"]
 }
