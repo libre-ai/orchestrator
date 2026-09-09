@@ -1,0 +1,159 @@
+{
+  "schemaVersion": "libre-ai.orchestration-pattern-catalog.v1",
+  "status": "research-non-normative",
+  "sources": [
+    {
+      "id": "langgraph-js",
+      "repository": "https://github.com/langchain-ai/langgraphjs",
+      "revision": "c6910a9ec1c2a84b76fb79b091b0f697a567e027",
+      "license": "MIT",
+      "studiedAt": "2026-09-09"
+    }
+  ],
+  "patterns": [
+    {
+      "id": "authorized-graph-topology",
+      "sourceId": "langgraph-js",
+      "upstreamSurfaces": ["graph-api", "conditional-edges"],
+      "question": "Quelle topologie exacte a reçu quorum et autorisation ?",
+      "authorities": ["missions", "orchestrator"],
+      "currentState": "missing",
+      "disposition": "candidate",
+      "candidateContracts": ["execution-graph.v1", "execution-plan-body.v2"],
+      "failureScenarios": [
+        "graphe modifié après quorum sans nouveau digest",
+        "plusieurs arêtes compatibles rendent la transition ambiguë"
+      ]
+    },
+    {
+      "id": "canonical-replay",
+      "sourceId": "langgraph-js",
+      "upstreamSurfaces": ["persistence", "durable-execution"],
+      "question": "Quel état suffit à reconstruire un run sans dépendre du stockage worker ?",
+      "authorities": ["orchestrator", "worker-internal"],
+      "currentState": "partial",
+      "disposition": "candidate",
+      "candidateContracts": ["orchestrator-event.v3"],
+      "failureScenarios": [
+        "checkpoint worker indisponible pendant le redémarrage",
+        "ancien checkpoint restauré sous un nouveau digest de plan"
+      ]
+    },
+    {
+      "id": "typed-human-decision",
+      "sourceId": "langgraph-js",
+      "upstreamSurfaces": ["interrupts", "human-in-the-loop"],
+      "question": "Quelle demande précise et quel choix autorisé permettent de reprendre une tentative ?",
+      "authorities": ["missions", "orchestrator"],
+      "currentState": "insufficient",
+      "disposition": "candidate",
+      "candidateContracts": ["decision-request.v1", "decision-response.v1"],
+      "failureScenarios": [
+        "réponse périmée reprenant une tentative différente",
+        "deux réponses concurrentes appliquées à la même demande"
+      ]
+    },
+    {
+      "id": "step-retry-identity",
+      "sourceId": "langgraph-js",
+      "upstreamSurfaces": ["retry-policies", "durable-execution"],
+      "question": "Comment distinguer le retry d'un calcul de la répétition d'un effet déjà commis ?",
+      "authorities": ["orchestrator", "harness"],
+      "currentState": "insufficient",
+      "disposition": "candidate",
+      "candidateContracts": [
+        "step-invocation.v1",
+        "effect-attestation.v1",
+        "orchestrator-event.v3"
+      ],
+      "failureScenarios": [
+        "effet commis répété après perte du résultat",
+        "deux workers exécutent le même identifiant de tentative"
+      ]
+    },
+    {
+      "id": "deterministic-fan-in",
+      "sourceId": "langgraph-js",
+      "upstreamSurfaces": ["parallel-branches", "reducers"],
+      "question": "Comment joindre des résultats concurrents sans dépendre de leur ordre d'arrivée ?",
+      "authorities": ["orchestrator"],
+      "currentState": "missing",
+      "disposition": "candidate",
+      "candidateContracts": ["execution-graph.v1"],
+      "failureScenarios": [
+        "l'ordre d'arrivée change le résultat fusionné",
+        "une branche tardive écrit après une jointure terminale"
+      ]
+    },
+    {
+      "id": "attenuated-child-budget",
+      "sourceId": "langgraph-js",
+      "upstreamSurfaces": ["subgraphs", "parallel-branches"],
+      "question": "Comment borner un sous-graphe sans recréer de capacité ou de budget ?",
+      "authorities": ["orchestrator", "harness"],
+      "currentState": "missing",
+      "disposition": "candidate",
+      "candidateContracts": ["execution-graph.v1", "step-invocation.v1"],
+      "failureScenarios": [
+        "les allocations enfants dépassent la réservation parente",
+        "un sous-graphe élargit les outils ou le réseau autorisés"
+      ]
+    },
+    {
+      "id": "safe-stream-projection",
+      "sourceId": "langgraph-js",
+      "upstreamSurfaces": ["streaming", "debug-events"],
+      "question": "Quelle projection peut être diffusée sans exposer le flux brut du worker ?",
+      "authorities": ["missions", "proof-artifact"],
+      "currentState": "partial",
+      "disposition": "candidate",
+      "candidateContracts": ["mission-progress-event.v1"],
+      "failureScenarios": [
+        "message worker brut envoyé aux logs opérationnels",
+        "prompt ou sortie outil copié dans une projection utilisateur"
+      ]
+    },
+    {
+      "id": "read-only-run-fork",
+      "sourceId": "langgraph-js",
+      "upstreamSurfaces": ["time-travel", "forks"],
+      "question": "Une simulation de fork peut-elle rester entièrement séparée de l'histoire canonique ?",
+      "authorities": ["orchestrator"],
+      "currentState": "intentionally-refused",
+      "disposition": "refused",
+      "candidateContracts": [],
+      "failureScenarios": [
+        "un fork modifie l'historique canonique des événements",
+        "une branche simulée réutilise une autorisation réelle"
+      ]
+    },
+    {
+      "id": "long-term-memory-authority",
+      "sourceId": "langgraph-js",
+      "upstreamSurfaces": ["memory", "persistence"],
+      "question": "Quelle autorité et quelle rétention justifieraient une mémoire au-delà du run ?",
+      "authorities": ["worker-internal"],
+      "currentState": "intentionally-refused",
+      "disposition": "refused",
+      "candidateContracts": [],
+      "failureScenarios": [
+        "contenu supprimé réapparu après restauration",
+        "mémoire cross-tenant chargée dans une nouvelle mission"
+      ]
+    },
+    {
+      "id": "dynamic-routing-authorization",
+      "sourceId": "langgraph-js",
+      "upstreamSurfaces": ["conditional-edges", "commands"],
+      "question": "Une route dynamique peut-elle changer sans élargir le plan déjà autorisé ?",
+      "authorities": ["missions", "orchestrator"],
+      "currentState": "insufficient",
+      "disposition": "candidate",
+      "candidateContracts": ["execution-graph.v1", "execution-plan-body.v2"],
+      "failureScenarios": [
+        "route non déterministe élargissant le plan approuvé",
+        "nouvelle branche exécutée sans nouveau quorum"
+      ]
+    }
+  ]
+}
