@@ -52,6 +52,16 @@ pub fn valid_execution_transfer() -> Value {
     schema_fixture("execution-transfer.v1.schema.json")
 }
 
+pub fn valid_effect_attestation(status: &str) -> Value {
+    let mut attestation = schema_fixture("effect-attestation.v1.schema.json");
+    attestation["status"] = Value::String(status.to_owned());
+    if matches!(status, "reserved" | "started") {
+        attestation["observationRef"] = Value::Null;
+        attestation["observedAt"] = Value::Null;
+    }
+    attestation
+}
+
 pub struct EventFixture<'a> {
     pub event_type: &'a str,
     pub sequence: u64,

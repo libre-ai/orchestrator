@@ -28,6 +28,10 @@ DecisionApplication
 DecisionDecision
 DecisionObservation
 DecisionRefusal
+EffectApplication
+EffectDecision
+EffectObservation
+EffectRefusal
 EventStoreObservation
 EventCollisionObservation
 GraphDecision
@@ -46,6 +50,7 @@ command_fingerprint
 evaluate_budget_event
 evaluate_causal_transition
 evaluate_control
+evaluate_effect_attestation
 evaluate_execution_transfer
 evaluate_graph
 evaluate_graph_authority
