@@ -1,12 +1,14 @@
-use std::fmt::{self, Debug, Formatter};
+use std::fmt::{self, Debug, Formatter, Write};
 
 use libre_ai_contract_types::ContractRegistry;
 use serde::Deserialize;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 use super::AuthorizedExecutionRefusal;
 
 const EXECUTION_GRAPH_SCHEMA: &str = "execution-graph.v1.schema.json";
+const ORCHESTRATOR_EVENT_SCHEMA: &str = "orchestrator-event.v3.schema.json";
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct AuthorizedGraph {
@@ -225,5 +227,337 @@ impl From<WireEdge> for AuthorizedEdge {
             outcome_code: wire.outcome_code,
             to_step_id: wire.to_step_id,
         }
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct AuthorizedExecutionEvent {
+    pub(super) id: String,
+    pub(super) organization_id: String,
+    pub(super) mission_id: String,
+    pub(super) run_id: String,
+    pub(super) orchestrator_id: String,
+    pub(super) plan_digest: String,
+    pub(super) authorization_digest: String,
+    pub(super) graph_digest: String,
+    pub(super) generation: u64,
+    pub(super) sequence: u64,
+    pub(super) previous_event_digest: Option<String>,
+    pub(super) event_digest: String,
+    pub(super) step_id: Option<String>,
+    pub(super) attempt_id: Option<String>,
+    pub(super) worker_invocation_id: Option<String>,
+    pub(super) selected_edge_id: Option<String>,
+    pub(super) kind: EventKind,
+    pub(super) budget_delta: BudgetCounters,
+    pub(super) budget_total: BudgetCounters,
+}
+
+impl AuthorizedExecutionEvent {
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub const fn sequence(&self) -> u64 {
+        self.sequence
+    }
+
+    pub fn digest(&self) -> &str {
+        &self.event_digest
+    }
+}
+
+impl Debug for AuthorizedExecutionEvent {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AuthorizedExecutionEvent")
+            .field("sequence", &self.sequence)
+            .field("kind", &self.kind.code())
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub(super) enum EventKind {
+    GraphActivated { graph_id: String },
+    StepAuthorized,
+    InvocationStarted,
+    StepResultRecorded { outcome_code: String },
+    DecisionRequested,
+    DecisionConsumed { outcome_code: String },
+    EffectReserved { status: EffectStatus },
+    EffectStarted { status: EffectStatus },
+    EffectTerminal { status: EffectStatus },
+    EffectUnknown { status: EffectStatus },
+    PredecessorSealed,
+    GenerationTransferred,
+    RunBlocked,
+    Quarantined,
+    RunCompleted,
+}
+
+impl EventKind {
+    fn code(&self) -> &'static str {
+        match self {
+            Self::GraphActivated { .. } => "graph-activated",
+            Self::StepAuthorized => "step-authorized",
+            Self::InvocationStarted => "invocation-started",
+            Self::StepResultRecorded { .. } => "step-result-recorded",
+            Self::DecisionRequested => "decision-requested",
+            Self::DecisionConsumed { .. } => "decision-consumed",
+            Self::EffectReserved { .. } => "effect-reserved",
+            Self::EffectStarted { .. } => "effect-started",
+            Self::EffectTerminal { .. } => "effect-terminal",
+            Self::EffectUnknown { .. } => "effect-unknown",
+            Self::PredecessorSealed => "predecessor-sealed",
+            Self::GenerationTransferred => "generation-transferred",
+            Self::RunBlocked => "run-blocked",
+            Self::Quarantined => "quarantined",
+            Self::RunCompleted => "run-completed",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(super) enum EffectStatus {
+    Reserved,
+    Started,
+    Committed,
+    RejectedFinal,
+    NotCommittedFinal,
+    StateUnknown,
+}
+
+impl EffectStatus {
+    pub(super) const fn outcome_code(self) -> Option<&'static str> {
+        match self {
+            Self::Committed => Some("effect-committed"),
+            Self::RejectedFinal | Self::NotCommittedFinal => Some("effect-refused"),
+            Self::Reserved | Self::Started | Self::StateUnknown => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(super) struct BudgetCounters {
+    pub(super) values: [u64; 7],
+}
+
+impl BudgetCounters {
+    pub(super) const fn tool_calls(self) -> u64 {
+        self.values[1]
+    }
+
+    pub(super) fn checked_add(self, delta: Self) -> Option<Self> {
+        let mut values = [0_u64; 7];
+        for (index, value) in values.iter_mut().enumerate() {
+            *value = self.values[index].checked_add(delta.values[index])?;
+        }
+        Some(Self { values })
+    }
+
+    pub(super) fn has_decreased_from(self, previous: Self) -> bool {
+        self.values
+            .iter()
+            .zip(previous.values)
+            .any(|(current, previous)| *current < previous)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WireEvent {
+    id: String,
+    organization_id: String,
+    mission_id: String,
+    run_id: String,
+    orchestrator_id: String,
+    plan_digest: String,
+    authorization_digest: String,
+    graph_digest: String,
+    generation: u64,
+    sequence: u64,
+    previous_event_digest: Option<String>,
+    step_id: Option<String>,
+    attempt_id: Option<String>,
+    worker_invocation_id: Option<String>,
+    selected_edge_id: Option<String>,
+    #[serde(rename = "type")]
+    kind: WireEventKind,
+    budget_delta: WireBudgetCounters,
+    budget_total: WireBudgetCounters,
+    data: WireEventData,
+    event_digest: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum WireEventKind {
+    GraphActivated,
+    StepAuthorized,
+    InvocationStarted,
+    StepResultRecorded,
+    DecisionRequested,
+    DecisionConsumed,
+    EffectReserved,
+    EffectStarted,
+    EffectTerminal,
+    EffectUnknown,
+    PredecessorSealed,
+    GenerationTransferred,
+    RunBlocked,
+    Quarantined,
+    RunCompleted,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WireBudgetCounters {
+    duration_seconds: u64,
+    tool_calls: u64,
+    input_tokens: u64,
+    output_tokens: u64,
+    processes_started: u64,
+    files_changed: u64,
+    changed_bytes: u64,
+}
+
+impl From<WireBudgetCounters> for BudgetCounters {
+    fn from(wire: WireBudgetCounters) -> Self {
+        Self {
+            values: [
+                wire.duration_seconds,
+                wire.tool_calls,
+                wire.input_tokens,
+                wire.output_tokens,
+                wire.processes_started,
+                wire.files_changed,
+                wire.changed_bytes,
+            ],
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WireEventData {
+    graph_ref: Option<WireEventArtifactReference>,
+    outcome_code: Option<String>,
+    effect_status: Option<WireEffectStatus>,
+}
+
+#[derive(Deserialize)]
+struct WireEventArtifactReference {
+    id: String,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum WireEffectStatus {
+    Reserved,
+    Started,
+    Committed,
+    RejectedFinal,
+    NotCommittedFinal,
+    StateUnknown,
+}
+
+pub fn parse_authorized_execution_event(
+    registry: &ContractRegistry,
+    document: &Value,
+) -> Result<AuthorizedExecutionEvent, AuthorizedExecutionRefusal> {
+    require_valid(registry, ORCHESTRATOR_EVENT_SCHEMA, document)?;
+    let wire: WireEvent = serde_json::from_value(document.clone())
+        .map_err(|_| AuthorizedExecutionRefusal::SchemaInvalid)?;
+    let computed_digest = canonical_event_digest(document)?;
+    if computed_digest != wire.event_digest {
+        return Err(AuthorizedExecutionRefusal::SchemaInvalid);
+    }
+
+    let kind = normalize_event_kind(wire.kind, wire.data)?;
+    Ok(AuthorizedExecutionEvent {
+        id: wire.id,
+        organization_id: wire.organization_id,
+        mission_id: wire.mission_id,
+        run_id: wire.run_id,
+        orchestrator_id: wire.orchestrator_id,
+        plan_digest: wire.plan_digest,
+        authorization_digest: wire.authorization_digest,
+        graph_digest: wire.graph_digest,
+        generation: wire.generation,
+        sequence: wire.sequence,
+        previous_event_digest: wire.previous_event_digest,
+        event_digest: wire.event_digest,
+        step_id: wire.step_id,
+        attempt_id: wire.attempt_id,
+        worker_invocation_id: wire.worker_invocation_id,
+        selected_edge_id: wire.selected_edge_id,
+        kind,
+        budget_delta: wire.budget_delta.into(),
+        budget_total: wire.budget_total.into(),
+    })
+}
+
+fn canonical_event_digest(document: &Value) -> Result<String, AuthorizedExecutionRefusal> {
+    let mut unsigned = document.clone();
+    let Some(object) = unsigned.as_object_mut() else {
+        return Err(AuthorizedExecutionRefusal::SchemaInvalid);
+    };
+    object.remove("eventDigest");
+    let canonical =
+        serde_jcs::to_vec(&unsigned).map_err(|_| AuthorizedExecutionRefusal::SchemaInvalid)?;
+    let mut digest = String::with_capacity(64);
+    for byte in Sha256::digest(canonical) {
+        write!(&mut digest, "{byte:02x}").map_err(|_| AuthorizedExecutionRefusal::SchemaInvalid)?;
+    }
+    Ok(digest)
+}
+
+fn normalize_event_kind(
+    kind: WireEventKind,
+    data: WireEventData,
+) -> Result<EventKind, AuthorizedExecutionRefusal> {
+    let missing = || AuthorizedExecutionRefusal::SchemaInvalid;
+    Ok(match kind {
+        WireEventKind::GraphActivated => EventKind::GraphActivated {
+            graph_id: data.graph_ref.ok_or_else(missing)?.id,
+        },
+        WireEventKind::StepAuthorized => EventKind::StepAuthorized,
+        WireEventKind::InvocationStarted => EventKind::InvocationStarted,
+        WireEventKind::StepResultRecorded => EventKind::StepResultRecorded {
+            outcome_code: data.outcome_code.ok_or_else(missing)?,
+        },
+        WireEventKind::DecisionRequested => EventKind::DecisionRequested,
+        WireEventKind::DecisionConsumed => EventKind::DecisionConsumed {
+            outcome_code: data.outcome_code.ok_or_else(missing)?,
+        },
+        WireEventKind::EffectReserved => EventKind::EffectReserved {
+            status: normalize_effect_status(data.effect_status.ok_or_else(missing)?),
+        },
+        WireEventKind::EffectStarted => EventKind::EffectStarted {
+            status: normalize_effect_status(data.effect_status.ok_or_else(missing)?),
+        },
+        WireEventKind::EffectTerminal => EventKind::EffectTerminal {
+            status: normalize_effect_status(data.effect_status.ok_or_else(missing)?),
+        },
+        WireEventKind::EffectUnknown => EventKind::EffectUnknown {
+            status: normalize_effect_status(data.effect_status.ok_or_else(missing)?),
+        },
+        WireEventKind::PredecessorSealed => EventKind::PredecessorSealed,
+        WireEventKind::GenerationTransferred => EventKind::GenerationTransferred,
+        WireEventKind::RunBlocked => EventKind::RunBlocked,
+        WireEventKind::Quarantined => EventKind::Quarantined,
+        WireEventKind::RunCompleted => EventKind::RunCompleted,
+    })
+}
+
+const fn normalize_effect_status(status: WireEffectStatus) -> EffectStatus {
+    match status {
+        WireEffectStatus::Reserved => EffectStatus::Reserved,
+        WireEffectStatus::Started => EffectStatus::Started,
+        WireEffectStatus::Committed => EffectStatus::Committed,
+        WireEffectStatus::RejectedFinal => EffectStatus::RejectedFinal,
+        WireEffectStatus::NotCommittedFinal => EffectStatus::NotCommittedFinal,
+        WireEffectStatus::StateUnknown => EffectStatus::StateUnknown,
     }
 }

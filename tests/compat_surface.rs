@@ -9,8 +9,9 @@
 
 use libre_ai_agent_orchestrator::{
     AuthorityDecision, AuthorityRefusal, AuthorizedExecutionRefusal, BudgetDecision,
-    ControlApplication, ControlDecision, ControlEffect, ControlRefusal, GraphDecision,
-    GraphRefusal, GraphTransitionDecision, SimulatedEffectDecision, parse_authorized_graph,
+    CausalDecision, CausalRefusal, ControlApplication, ControlDecision, ControlEffect,
+    ControlRefusal, EventCollisionObservation, GraphDecision, GraphRefusal,
+    GraphTransitionDecision, SimulatedEffectDecision, parse_authorized_graph,
     select_graph_transition,
 };
 use libre_ai_contract_types::ContractRegistry;
@@ -189,6 +190,38 @@ fn authority_decision_variants_are_covered(value: AuthorityDecision) {
     }
 }
 
+#[allow(dead_code)]
+fn event_collision_observation_variants_are_covered(value: EventCollisionObservation<'_>) {
+    match value {
+        EventCollisionObservation::Absent
+        | EventCollisionObservation::Existing { .. }
+        | EventCollisionObservation::Unavailable => {}
+    }
+}
+
+#[allow(dead_code)]
+fn causal_refusal_variants_are_covered(value: CausalRefusal) {
+    match value {
+        CausalRefusal::DuplicateDivergent
+        | CausalRefusal::IdentityMismatch
+        | CausalRefusal::GenerationStale
+        | CausalRefusal::SequenceInvalid
+        | CausalRefusal::PreviousDigestMismatch
+        | CausalRefusal::BudgetDecreased
+        | CausalRefusal::BudgetArithmeticInvalid => {}
+    }
+}
+
+#[allow(dead_code)]
+fn causal_decision_variants_are_covered(value: CausalDecision) {
+    match value {
+        CausalDecision::Valid
+        | CausalDecision::Idempotent
+        | CausalDecision::Refused(_)
+        | CausalDecision::BoundaryRefused(_) => {}
+    }
+}
+
 fn selected_route_code() -> &'static str {
     let registry = ContractRegistry::embedded().expect("embedded registry");
     let document = json!({
@@ -319,6 +352,21 @@ fn stable_codes_match_the_committed_snapshot() {
         .map(|refusal| refusal.code().to_owned()),
     );
     actual.push(AuthorityDecision::Valid.code().to_owned());
+    actual.extend(
+        [
+            CausalRefusal::DuplicateDivergent,
+            CausalRefusal::IdentityMismatch,
+            CausalRefusal::GenerationStale,
+            CausalRefusal::SequenceInvalid,
+            CausalRefusal::PreviousDigestMismatch,
+            CausalRefusal::BudgetDecreased,
+            CausalRefusal::BudgetArithmeticInvalid,
+        ]
+        .iter()
+        .map(|refusal| refusal.code().to_owned()),
+    );
+    actual.push(CausalDecision::Valid.code().to_owned());
+    actual.push(CausalDecision::Idempotent.code().to_owned());
     actual.sort_unstable();
 
     let mut expected = snapshot_lines(STABLE_CODES_SNAPSHOT);

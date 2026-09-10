@@ -8,11 +8,15 @@
 
 AuthorityDecision
 AuthorityRefusal
+AuthorizedExecutionEvent
 AuthorizedExecutionRefusal
+AuthorizedExecutionState
 AuthorizedGraph
 BudgetDecision
 CommandCollisionObservation
 CommandReceipt
+CausalDecision
+CausalRefusal
 ControlAction
 ControlApplication
 ControlCommand
@@ -21,6 +25,7 @@ ControlEffect
 ControlPhase
 ControlRefusal
 EventStoreObservation
+EventCollisionObservation
 GraphDecision
 GraphRefusal
 GraphTransition
@@ -31,10 +36,13 @@ SimulatedEffectDecision
 StartPreflight
 command_fingerprint
 evaluate_budget_event
+evaluate_causal_transition
 evaluate_control
 evaluate_graph
 evaluate_graph_authority
 evaluate_simulated_effect
 parse_authorized_graph
+parse_authorized_execution_event
 parse_control_document
+replay_authorized_execution
 select_graph_transition
