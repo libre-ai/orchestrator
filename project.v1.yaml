@@ -19,7 +19,7 @@ statement:
     - "aucun service tiers : les types de contrats et les vecteurs d'événements viennent de git-deps intra-org épinglées par SHA"
 summary: "Cœur Rust sans effet pour le contrôle et les décisions authorized-execution, avec preuves de rejeu déterministe et outillage de revue."
 current_situation: >-
-  Le noyau natif authorized-execution 0.2.0 de WP-G3-O02 est implémenté et vert ; sa revue immuable par rôles reste en attente. Le run boundary, les effets réels et le déploiement restent bloqués et WP-G3-O01 n'est pas revendiqué.
+  Le noyau natif authorized-execution 0.2.0 de WP-G3-O02 est prouvé sur un commit immuable. Le run boundary, les effets réels et le déploiement restent bloqués et WP-G3-O01 n'est pas revendiqué.
 scope:
   - "API publique garantie de la crate libre-ai-agent-orchestrator (src/lib.rs) — contrôle : les fonctions parse_control_document, evaluate_control, evaluate_simulated_effect et command_fingerprint, et les types ControlCommand, ControlAction, ControlDecision, ControlApplication, ControlEffect, ControlPhase, ControlRefusal, RunControlState, StartPreflight, CommandReceipt, CommandCollisionObservation et SimulatedEffectDecision."
   - "API publique garantie — budget : la fonction evaluate_budget_event et les types PlanBudgetLimits, BudgetDecision et EventStoreObservation."
@@ -62,12 +62,15 @@ benchmark:
 phases:
   - id: native-authorized-execution
     title: Noyau natif authorized-execution Phase 4A
-    note: "Milestone: implemented-review-pending. Autorité : ADR-0037 / D43 / WP-G3-O02 au commit Governance 25778623d10150fe1ffb6ab8806e35fba7af5245. WP-G3-O01, run boundary, effets réels et déploiement restent bloqués."
+    note: "Milestone: proven. Autorité : ADR-0037 / D43 / WP-G3-O02 au commit Governance 25778623d10150fe1ffb6ab8806e35fba7af5245. WP-G3-O01, run boundary, effets réels et déploiement restent bloqués."
     exit_criteria:
       - id: immutable-role-review
         text: "Le même commit d'implémentation passe les revues architecture, sécurité, privacy et intégration, avec preuve locale complète, 54 vecteurs locked et cinq scénarios de panne."
         weight: 1
-        status: pending
+        status: accepted
+        evidence:
+          date: "2026-09-10"
+          reference: "docs/reviews/authorized-execution-native-core/1ae6b88/ — revues et preuve du commit 1ae6b881f39bd731be2cc5326ba9de982afbd431"
   - id: service
     title: En service dans la constellation
     exit_criteria:

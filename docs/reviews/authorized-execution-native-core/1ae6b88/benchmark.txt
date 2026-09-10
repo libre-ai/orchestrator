@@ -1,0 +1,14 @@
+Authorized-execution native core benchmark evidence
+
+Reviewed implementation SHA: 1ae6b881f39bd731be2cc5326ba9de982afbd431
+Recorded at (UTC): 2026-09-10T16:08:55Z
+Command: cargo bench --bench authorized_execution_replay
+Exit code: 0
+
+authorized_execution.graph_validation iterations=100 ns_per_iteration=262757
+authorized_execution.route_selection iterations=100 ns_per_iteration=670
+authorized_execution.replay events=767 iterations=100 ns_per_event=387
+
+These values are an informational regression baseline, not a hardware-independent
+acceptance threshold. The benchmark uses the contract maximum of 256 steps and
+512 edges and replays 767 events without adding a benchmarking dependency.
