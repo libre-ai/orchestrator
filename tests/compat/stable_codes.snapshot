@@ -117,3 +117,21 @@ revision-stale
 # TransferDecision — own codes only (2)
 transfer-valid
 idempotent-duplicate
+
+# EffectRefusal (11)
+organization-mismatch
+identity-mismatch
+attempt-mismatch
+lineage-administratively-closed
+generation-consumed
+generation-stale
+emission-divergent
+second-emission-for-attempt
+fencing-stale
+executor-unqualified
+predecessor-effects-nonterminal
+
+# EffectDecision — own codes only (3)
+effect-valid
+emission-duplicate
+effect-state-unknown

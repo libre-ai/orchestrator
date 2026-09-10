@@ -10,11 +10,11 @@
 use libre_ai_agent_orchestrator::{
     AuthorityDecision, AuthorityRefusal, AuthorizedExecutionRefusal, BudgetDecision,
     CausalDecision, CausalRefusal, ControlApplication, ControlDecision, ControlEffect,
-    ControlRefusal, DecisionDecision, DecisionObservation, DecisionRefusal,
-    EventCollisionObservation, GraphDecision, GraphRefusal, GraphTransitionDecision,
-    SimulatedEffectDecision, TransferDecision, TransferObservation, TransferRefusal,
-    evaluate_execution_transfer, evaluate_human_decision, parse_authorized_graph,
-    select_graph_transition,
+    ControlRefusal, DecisionDecision, DecisionObservation, DecisionRefusal, EffectDecision,
+    EffectObservation, EffectRefusal, EventCollisionObservation, GraphDecision, GraphRefusal,
+    GraphTransitionDecision, SimulatedEffectDecision, TransferDecision, TransferObservation,
+    TransferRefusal, evaluate_effect_attestation, evaluate_execution_transfer,
+    evaluate_human_decision, parse_authorized_graph, select_graph_transition,
 };
 use libre_ai_contract_types::ContractRegistry;
 use serde_json::json;
@@ -288,6 +288,41 @@ fn transfer_decision_variants_are_covered(value: &TransferDecision) {
     }
 }
 
+#[allow(dead_code)]
+fn effect_observation_variants_are_covered(value: EffectObservation<'_>) {
+    match value {
+        EffectObservation::Unavailable | EffectObservation::Authoritative { .. } => {}
+    }
+}
+
+#[allow(dead_code)]
+fn effect_refusal_variants_are_covered(value: EffectRefusal) {
+    match value {
+        EffectRefusal::OrganizationMismatch
+        | EffectRefusal::IdentityMismatch
+        | EffectRefusal::AttemptMismatch
+        | EffectRefusal::LineageAdministrativelyClosed
+        | EffectRefusal::GenerationConsumed
+        | EffectRefusal::GenerationStale
+        | EffectRefusal::EmissionDivergent
+        | EffectRefusal::SecondEmissionForAttempt
+        | EffectRefusal::FencingStale
+        | EffectRefusal::ExecutorUnqualified
+        | EffectRefusal::PredecessorEffectsNonterminal => {}
+    }
+}
+
+#[allow(dead_code)]
+fn effect_decision_variants_are_covered(value: &EffectDecision) {
+    match value {
+        EffectDecision::Apply(_)
+        | EffectDecision::Idempotent
+        | EffectDecision::ContinuityBarrier
+        | EffectDecision::Refused(_)
+        | EffectDecision::BoundaryRefused(_) => {}
+    }
+}
+
 fn selected_route_code() -> &'static str {
     let registry = ContractRegistry::embedded().expect("embedded registry");
     let document = json!({
@@ -369,6 +404,31 @@ fn valid_transfer_code() -> &'static str {
             prior_transfer: None,
         },
         "2026-09-10T10:05:00Z",
+    )
+    .code()
+}
+
+fn valid_effect_code() -> &'static str {
+    let registry = ContractRegistry::embedded().expect("embedded registry");
+    let attestation = schema_fixture("effect-attestation.v1.schema.json");
+    evaluate_effect_attestation(
+        &registry,
+        &attestation,
+        EffectObservation::Authoritative {
+            expected_organization_id: "ten_1234567890abcdef",
+            expected_run_id: "urn:libre-ai:run:synthetic-run-1",
+            expected_attempt_id: "urn:libre-ai:attempt:synthetic-attempt-1",
+            current_generation: 1,
+            active_fencing: Some(7),
+            expected_executor_profile_digest:
+                "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            generation_consumed: false,
+            lineage_closed: false,
+            predecessor_effects_terminal: true,
+            executor_profile_qualified: true,
+            prior_emission: None,
+            existing_attempt_emission_id: None,
+        },
     )
     .code()
 }
@@ -516,6 +576,26 @@ fn stable_codes_match_the_committed_snapshot() {
     );
     actual.push(TransferDecision::Idempotent.code().to_owned());
     actual.push(valid_transfer_code().to_owned());
+    actual.extend(
+        [
+            EffectRefusal::OrganizationMismatch,
+            EffectRefusal::IdentityMismatch,
+            EffectRefusal::AttemptMismatch,
+            EffectRefusal::LineageAdministrativelyClosed,
+            EffectRefusal::GenerationConsumed,
+            EffectRefusal::GenerationStale,
+            EffectRefusal::EmissionDivergent,
+            EffectRefusal::SecondEmissionForAttempt,
+            EffectRefusal::FencingStale,
+            EffectRefusal::ExecutorUnqualified,
+            EffectRefusal::PredecessorEffectsNonterminal,
+        ]
+        .iter()
+        .map(|refusal| refusal.code().to_owned()),
+    );
+    actual.push(EffectDecision::Idempotent.code().to_owned());
+    actual.push(EffectDecision::ContinuityBarrier.code().to_owned());
+    actual.push(valid_effect_code().to_owned());
     actual.sort_unstable();
 
     let mut expected = snapshot_lines(STABLE_CODES_SNAPSHOT);

@@ -2,6 +2,7 @@ use std::fmt::{self, Display, Formatter};
 
 mod decision;
 mod document;
+mod effect;
 mod graph;
 mod replay;
 mod transfer;
@@ -13,6 +14,10 @@ pub use decision::{
 pub use document::{
     AuthorizedExecutionEvent, AuthorizedGraph, parse_authorized_execution_event,
     parse_authorized_graph,
+};
+pub use effect::{
+    EffectApplication, EffectDecision, EffectObservation, EffectRefusal,
+    evaluate_effect_attestation,
 };
 pub use graph::{
     AuthorityDecision, AuthorityRefusal, GraphDecision, GraphRefusal, GraphTransition,
