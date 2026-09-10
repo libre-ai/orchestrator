@@ -53,6 +53,9 @@ jobs:
   rust-quality:
     name: Rust quality
     runs-on: ubuntu-latest
+    env:
+      CARGO_LLVM_COV_VERSION: "0.9.1"
+      CARGO_LLVM_COV_SHA256: "3fca950394a3c49457657c158b1619cec8dfd2647ae5b48746734c0ab969a522"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install archived Bun toolchain
@@ -67,9 +70,30 @@ jobs:
       # the vector fixtures resolve from the pinned contracts git-dep
       - run: bun install --frozen-lockfile
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable action
+      - name: Install pinned cargo-llvm-cov
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/rust-coverage/bin"
+          archive="$RUNNER_TEMP/cargo-llvm-cov.tar.gz"
+          mkdir -p "$bin"
+          curl --fail --location --retry 3 --output "$archive" \
+            "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v${CARGO_LLVM_COV_VERSION}/cargo-llvm-cov-x86_64-unknown-linux-musl.tar.gz"
+          echo "${CARGO_LLVM_COV_SHA256}  ${archive}" | sha256sum --check --strict
+          tar -xzf "$archive" -C "$bin"
+          echo "$bin" >> "$GITHUB_PATH"
+          rustup component add llvm-tools-preview
       - run: cargo fmt --all --check
       - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo test --locked --all-features
+      - name: Rust coverage (blocking)
+        run: |
+          set -euo pipefail
+          mkdir -p coverage
+          cargo llvm-cov --locked --all-features --lcov \
+            --output-path coverage/lcov.info \
+            --fail-under-lines 87 \
+            --fail-under-functions 90
+          cargo llvm-cov report --summary-only | tee -a "$GITHUB_STEP_SUMMARY"
 
   dependency-policy:
     name: Dependency policy
