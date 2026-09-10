@@ -8,9 +8,13 @@
 //! `docs/compat/BREAKS.md` — all in the same commit.
 
 use libre_ai_agent_orchestrator::{
-    BudgetDecision, ControlApplication, ControlDecision, ControlEffect, ControlRefusal,
-    SimulatedEffectDecision,
+    AuthorityDecision, AuthorityRefusal, AuthorizedExecutionRefusal, BudgetDecision,
+    ControlApplication, ControlDecision, ControlEffect, ControlRefusal, GraphDecision,
+    GraphRefusal, GraphTransitionDecision, SimulatedEffectDecision, parse_authorized_graph,
+    select_graph_transition,
 };
+use libre_ai_contract_types::ContractRegistry;
+use serde_json::json;
 
 const LIB_RS_SOURCE: &str = include_str!("../src/lib.rs");
 const PUBLIC_SURFACE_SNAPSHOT: &str = include_str!("compat/public_surface.snapshot");
@@ -128,6 +132,96 @@ fn control_decision_variants_are_covered(value: &ControlDecision) {
     }
 }
 
+#[allow(dead_code)]
+fn authorized_execution_refusal_variants_are_covered(value: AuthorizedExecutionRefusal) {
+    match value {
+        AuthorizedExecutionRefusal::SchemaInvalid
+        | AuthorizedExecutionRefusal::StoreUnavailable
+        | AuthorizedExecutionRefusal::TransitionForbidden
+        | AuthorizedExecutionRefusal::BudgetExceeded
+        | AuthorizedExecutionRefusal::ArithmeticOverflow => {}
+    }
+}
+
+#[allow(dead_code)]
+fn graph_refusal_variants_are_covered(value: GraphRefusal) {
+    match value {
+        GraphRefusal::DuplicateStep
+        | GraphRefusal::DuplicateEdge
+        | GraphRefusal::EntryMissing
+        | GraphRefusal::DanglingEdge
+        | GraphRefusal::TerminalHasOutgoingEdge
+        | GraphRefusal::RouteMissing
+        | GraphRefusal::RouteAmbiguous
+        | GraphRefusal::TerminalUnreachable
+        | GraphRefusal::UnreachableStep
+        | GraphRefusal::CycleForbidden => {}
+    }
+}
+
+#[allow(dead_code)]
+fn graph_decision_variants_are_covered(value: GraphDecision) {
+    match value {
+        GraphDecision::Valid | GraphDecision::Refused(_) => {}
+    }
+}
+
+#[allow(dead_code)]
+fn graph_transition_decision_variants_are_covered(value: &GraphTransitionDecision) {
+    match value {
+        GraphTransitionDecision::Selected(_) | GraphTransitionDecision::Refused(_) => {}
+    }
+}
+
+#[allow(dead_code)]
+fn authority_refusal_variants_are_covered(value: AuthorityRefusal) {
+    match value {
+        AuthorityRefusal::GraphPolicyInvalid | AuthorityRefusal::AuthorityBindingMismatch => {}
+    }
+}
+
+#[allow(dead_code)]
+fn authority_decision_variants_are_covered(value: AuthorityDecision) {
+    match value {
+        AuthorityDecision::Valid
+        | AuthorityDecision::Refused(_)
+        | AuthorityDecision::BoundaryRefused(_) => {}
+    }
+}
+
+fn selected_route_code() -> &'static str {
+    let registry = ContractRegistry::embedded().expect("embedded registry");
+    let document = json!({
+        "schemaVersion": "libre-ai.execution-graph.v1",
+        "id": "urn:libre-ai:graph:compat-snapshot",
+        "organizationId": "ten_1234567890abcdef",
+        "entryStepId": "urn:libre-ai:step:source",
+        "steps": [
+            {
+                "stepId": "urn:libre-ai:step:source",
+                "kind": "calculation",
+                "outcomeCodes": ["ready"],
+                "retryPolicy": { "maximumAttempts": 1, "retryableOutcomeCodes": [] }
+            },
+            {
+                "stepId": "urn:libre-ai:step:terminal",
+                "kind": "terminal",
+                "outcomeCodes": []
+            }
+        ],
+        "edges": [{
+            "edgeId": "urn:libre-ai:edge:ready",
+            "fromStepId": "urn:libre-ai:step:source",
+            "outcomeCode": "ready",
+            "toStepId": "urn:libre-ai:step:terminal"
+        }],
+        "createdAt": "2030-01-01T00:00:00Z",
+        "graphDigest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    });
+    let graph = parse_authorized_graph(&registry, &document).expect("valid compat graph");
+    select_graph_transition(&graph, "urn:libre-ai:step:source", "ready").code()
+}
+
 // ---- Stable code strings ---------------------------------------------------
 //
 // Scope matches project.v1.yaml's compat-policy criterion exactly: the codes
@@ -187,6 +281,44 @@ fn stable_codes_match_the_committed_snapshot() {
     actual.push(BudgetDecision::CausalStoreUnavailable.code().to_owned());
     actual.push(BudgetDecision::PlanIdentityMismatch.code().to_owned());
     actual.push(BudgetDecision::PlanBudgetExceeded.code().to_owned());
+    actual.extend(
+        [
+            AuthorizedExecutionRefusal::SchemaInvalid,
+            AuthorizedExecutionRefusal::StoreUnavailable,
+            AuthorizedExecutionRefusal::TransitionForbidden,
+            AuthorizedExecutionRefusal::BudgetExceeded,
+            AuthorizedExecutionRefusal::ArithmeticOverflow,
+        ]
+        .iter()
+        .map(|refusal| refusal.code().to_owned()),
+    );
+    actual.extend(
+        [
+            GraphRefusal::DuplicateStep,
+            GraphRefusal::DuplicateEdge,
+            GraphRefusal::EntryMissing,
+            GraphRefusal::DanglingEdge,
+            GraphRefusal::TerminalHasOutgoingEdge,
+            GraphRefusal::RouteMissing,
+            GraphRefusal::RouteAmbiguous,
+            GraphRefusal::TerminalUnreachable,
+            GraphRefusal::UnreachableStep,
+            GraphRefusal::CycleForbidden,
+        ]
+        .iter()
+        .map(|refusal| refusal.code().to_owned()),
+    );
+    actual.push(GraphDecision::Valid.code().to_owned());
+    actual.push(selected_route_code().to_owned());
+    actual.extend(
+        [
+            AuthorityRefusal::GraphPolicyInvalid,
+            AuthorityRefusal::AuthorityBindingMismatch,
+        ]
+        .iter()
+        .map(|refusal| refusal.code().to_owned()),
+    );
+    actual.push(AuthorityDecision::Valid.code().to_owned());
     actual.sort_unstable();
 
     let mut expected = snapshot_lines(STABLE_CODES_SNAPSHOT);

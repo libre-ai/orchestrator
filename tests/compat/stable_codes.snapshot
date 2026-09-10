@@ -45,3 +45,35 @@ orchestrator.control.idempotent
 causal-store-unavailable
 plan-identity-mismatch
 plan-budget-exceeded
+
+# AuthorizedExecutionRefusal (5)
+orchestrator.authorized-execution.schema-invalid
+orchestrator.authorized-execution.store-unavailable
+orchestrator.authorized-execution.transition-forbidden
+orchestrator.authorized-execution.budget-exceeded
+orchestrator.authorized-execution.arithmetic-overflow
+
+# GraphRefusal (10)
+duplicate-step
+duplicate-edge
+entry-missing
+dangling-edge
+terminal-has-outgoing-edge
+route-missing
+route-ambiguous
+terminal-unreachable
+unreachable-step
+cycle-forbidden
+
+# GraphDecision — own code only (1)
+graph-valid
+
+# GraphTransitionDecision — own code only (1)
+route-selected
+
+# AuthorityRefusal (2)
+graph-policy-invalid
+authority-binding-mismatch
+
+# AuthorityDecision — own code only (1)
+authority-valid

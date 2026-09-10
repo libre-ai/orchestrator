@@ -11,8 +11,6 @@ fix is never to only edit the snapshot: a real, intentional break is recorded
 here — date, what changed, old value, new value, why — in the same commit
 that bumps `version` in `Cargo.toml` and updates the snapshot file.
 
-No break has been recorded since this journal opened.
-
 | Date | Crate version | Surface | Change | Reason |
 | ---- | ------------- | ------- | ------ | ------ |
-| —    | —             | —       | —      | —      |
+| 2026-09-10 | 0.2.0 | Public API and stable codes | Add the authorized-execution graph, routing and authority surface; retain all 0.1.0 symbols and behavior | Record the first coherent additive authorized-execution API before any consumer can pin it |
