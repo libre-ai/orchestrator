@@ -65,6 +65,11 @@ fn snapshot_lines(text: &str) -> Vec<String> {
 }
 
 #[test]
+fn authorized_execution_surface_is_versioned_as_0_2_0() {
+    assert_eq!(env!("CARGO_PKG_VERSION"), "0.2.0");
+}
+
+#[test]
 fn public_surface_matches_the_committed_snapshot() {
     let mut actual = exported_symbol_names(LIB_RS_SOURCE);
     actual.sort_unstable();
