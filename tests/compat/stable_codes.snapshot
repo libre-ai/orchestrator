@@ -77,3 +77,16 @@ authority-binding-mismatch
 
 # AuthorityDecision — own code only (1)
 authority-valid
+
+# CausalRefusal (7)
+duplicate-divergent
+identity-mismatch
+generation-stale
+sequence-invalid
+previous-digest-mismatch
+budget-decreased
+budget-arithmetic-invalid
+
+# CausalDecision — own codes only (2)
+event-valid
+idempotent-duplicate

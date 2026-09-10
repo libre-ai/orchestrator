@@ -68,12 +68,17 @@ impl GraphDecision {
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct GraphTransition {
+    edge_id: String,
     target_step_id: String,
 }
 
 impl GraphTransition {
     pub fn target_step_id(&self) -> &str {
         &self.target_step_id
+    }
+
+    pub(super) fn edge_id(&self) -> &str {
+        &self.edge_id
     }
 }
 
@@ -318,6 +323,7 @@ pub fn select_graph_transition(
         return GraphTransitionDecision::Refused(GraphRefusal::RouteAmbiguous);
     }
     GraphTransitionDecision::Selected(GraphTransition {
+        edge_id: route.edge_id.clone(),
         target_step_id: route.to_step_id.clone(),
     })
 }
