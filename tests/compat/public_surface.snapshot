@@ -6,6 +6,10 @@
 # A legitimate change to this file requires, in the same commit: bumping the
 # crate version in Cargo.toml and adding an entry to docs/compat/BREAKS.md.
 
+AuthorityDecision
+AuthorityRefusal
+AuthorizedExecutionRefusal
+AuthorizedGraph
 BudgetDecision
 CommandCollisionObservation
 CommandReceipt
@@ -17,6 +21,10 @@ ControlEffect
 ControlPhase
 ControlRefusal
 EventStoreObservation
+GraphDecision
+GraphRefusal
+GraphTransition
+GraphTransitionDecision
 PlanBudgetLimits
 RunControlState
 SimulatedEffectDecision
@@ -24,5 +32,9 @@ StartPreflight
 command_fingerprint
 evaluate_budget_event
 evaluate_control
+evaluate_graph
+evaluate_graph_authority
 evaluate_simulated_effect
+parse_authorized_graph
 parse_control_document
+select_graph_transition
