@@ -1,9 +1,15 @@
 use std::fmt::{self, Display, Formatter};
 
+mod decision;
 mod document;
 mod graph;
 mod replay;
+mod transfer;
 
+pub use decision::{
+    DecisionApplication, DecisionDecision, DecisionObservation, DecisionRefusal,
+    evaluate_human_decision,
+};
 pub use document::{
     AuthorizedExecutionEvent, AuthorizedGraph, parse_authorized_execution_event,
     parse_authorized_graph,
@@ -15,6 +21,10 @@ pub use graph::{
 pub use replay::{
     AuthorizedExecutionState, CausalDecision, CausalRefusal, EventCollisionObservation,
     evaluate_causal_transition, replay_authorized_execution,
+};
+pub use transfer::{
+    TransferApplication, TransferDecision, TransferObservation, TransferRefusal,
+    evaluate_execution_transfer,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

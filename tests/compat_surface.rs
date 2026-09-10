@@ -10,8 +10,10 @@
 use libre_ai_agent_orchestrator::{
     AuthorityDecision, AuthorityRefusal, AuthorizedExecutionRefusal, BudgetDecision,
     CausalDecision, CausalRefusal, ControlApplication, ControlDecision, ControlEffect,
-    ControlRefusal, EventCollisionObservation, GraphDecision, GraphRefusal,
-    GraphTransitionDecision, SimulatedEffectDecision, parse_authorized_graph,
+    ControlRefusal, DecisionDecision, DecisionObservation, DecisionRefusal,
+    EventCollisionObservation, GraphDecision, GraphRefusal, GraphTransitionDecision,
+    SimulatedEffectDecision, TransferDecision, TransferObservation, TransferRefusal,
+    evaluate_execution_transfer, evaluate_human_decision, parse_authorized_graph,
     select_graph_transition,
 };
 use libre_ai_contract_types::ContractRegistry;
@@ -20,6 +22,9 @@ use serde_json::json;
 const LIB_RS_SOURCE: &str = include_str!("../src/lib.rs");
 const PUBLIC_SURFACE_SNAPSHOT: &str = include_str!("compat/public_surface.snapshot");
 const STABLE_CODES_SNAPSHOT: &str = include_str!("compat/stable_codes.snapshot");
+const SCHEMA_FIXTURES: &str = include_str!(
+    "../node_modules/@libre-ai/contracts-authority/contracts/fixtures/schema-fixtures.v1.json"
+);
 
 /// Every symbol named inside the crate's `pub use module::{...};` blocks —
 /// the only place `src/lib.rs` exposes anything, since `budget` and
@@ -222,6 +227,67 @@ fn causal_decision_variants_are_covered(value: CausalDecision) {
     }
 }
 
+#[allow(dead_code)]
+fn decision_observation_variants_are_covered(value: DecisionObservation<'_>) {
+    match value {
+        DecisionObservation::Unavailable | DecisionObservation::Authoritative { .. } => {}
+    }
+}
+
+#[allow(dead_code)]
+fn decision_refusal_variants_are_covered(value: DecisionRefusal) {
+    match value {
+        DecisionRefusal::OrganizationMismatch
+        | DecisionRefusal::AttemptMismatch
+        | DecisionRefusal::RequestReplaced
+        | DecisionRefusal::DuplicateDivergent
+        | DecisionRefusal::RequestExpired
+        | DecisionRefusal::RequestConsumed
+        | DecisionRefusal::ChoiceUnknown
+        | DecisionRefusal::ActorUnauthorized
+        | DecisionRefusal::RevisionStale => {}
+    }
+}
+
+#[allow(dead_code)]
+fn decision_decision_variants_are_covered(value: &DecisionDecision) {
+    match value {
+        DecisionDecision::Apply(_)
+        | DecisionDecision::Idempotent
+        | DecisionDecision::Refused(_)
+        | DecisionDecision::BoundaryRefused(_) => {}
+    }
+}
+
+#[allow(dead_code)]
+fn transfer_observation_variants_are_covered(value: TransferObservation<'_>) {
+    match value {
+        TransferObservation::Unavailable | TransferObservation::Authoritative { .. } => {}
+    }
+}
+
+#[allow(dead_code)]
+fn transfer_refusal_variants_are_covered(value: TransferRefusal) {
+    match value {
+        TransferRefusal::DuplicateDivergent
+        | TransferRefusal::TransferExpired
+        | TransferRefusal::GenerationConsumed
+        | TransferRefusal::IdentityMismatch
+        | TransferRefusal::GenerationStale
+        | TransferRefusal::RevisionStale => {}
+    }
+}
+
+#[allow(dead_code)]
+fn transfer_decision_variants_are_covered(value: &TransferDecision) {
+    match value {
+        TransferDecision::Apply(_)
+        | TransferDecision::Idempotent
+        | TransferDecision::Refused(_)
+        | TransferDecision::BoundaryRefused(_) => {}
+    }
+}
+
 fn selected_route_code() -> &'static str {
     let registry = ContractRegistry::embedded().expect("embedded registry");
     let document = json!({
@@ -253,6 +319,58 @@ fn selected_route_code() -> &'static str {
     });
     let graph = parse_authorized_graph(&registry, &document).expect("valid compat graph");
     select_graph_transition(&graph, "urn:libre-ai:step:source", "ready").code()
+}
+
+fn schema_fixture(schema_name: &str) -> serde_json::Value {
+    let document: serde_json::Value =
+        serde_json::from_str(SCHEMA_FIXTURES).expect("locked schema fixtures");
+    document["cases"]
+        .as_array()
+        .expect("fixture cases")
+        .iter()
+        .find(|case| case["schema"].as_str() == Some(schema_name))
+        .and_then(|case| case.get("valid"))
+        .cloned()
+        .expect("named fixture")
+}
+
+fn valid_decision_code() -> &'static str {
+    let registry = ContractRegistry::embedded().expect("embedded registry");
+    let request = schema_fixture("human-decision-request.v1.schema.json");
+    let mut response = schema_fixture("human-decision-response.v1.schema.json");
+    response["requestDigest"] = request["requestDigest"].clone();
+    evaluate_human_decision(
+        &registry,
+        &request,
+        &response,
+        DecisionObservation::authoritative(false, false, &["mission-approver"], 4, None),
+        "2026-09-10T11:00:00Z",
+    )
+    .code()
+}
+
+fn valid_transfer_code() -> &'static str {
+    let registry = ContractRegistry::embedded().expect("embedded registry");
+    let transfer = schema_fixture("execution-transfer.v1.schema.json");
+    evaluate_execution_transfer(
+        &registry,
+        &transfer,
+        TransferObservation::Authoritative {
+            organization_id: "ten_1234567890abcdef",
+            mission_id: "urn:libre-ai:mission:synthetic-mission-1",
+            predecessor_run_id: "urn:libre-ai:run:synthetic-run-1",
+            predecessor_plan_digest:
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            successor_plan_digest:
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            current_generation: 1,
+            revision: 4,
+            generation_consumed: false,
+            prior_transfer: None,
+        },
+        "2026-09-10T10:05:00Z",
+    )
+    .code()
 }
 
 // ---- Stable code strings ---------------------------------------------------
@@ -367,6 +485,37 @@ fn stable_codes_match_the_committed_snapshot() {
     );
     actual.push(CausalDecision::Valid.code().to_owned());
     actual.push(CausalDecision::Idempotent.code().to_owned());
+    actual.extend(
+        [
+            DecisionRefusal::OrganizationMismatch,
+            DecisionRefusal::AttemptMismatch,
+            DecisionRefusal::RequestReplaced,
+            DecisionRefusal::DuplicateDivergent,
+            DecisionRefusal::RequestExpired,
+            DecisionRefusal::RequestConsumed,
+            DecisionRefusal::ChoiceUnknown,
+            DecisionRefusal::ActorUnauthorized,
+            DecisionRefusal::RevisionStale,
+        ]
+        .iter()
+        .map(|refusal| refusal.code().to_owned()),
+    );
+    actual.push(DecisionDecision::Idempotent.code().to_owned());
+    actual.push(valid_decision_code().to_owned());
+    actual.extend(
+        [
+            TransferRefusal::DuplicateDivergent,
+            TransferRefusal::TransferExpired,
+            TransferRefusal::GenerationConsumed,
+            TransferRefusal::IdentityMismatch,
+            TransferRefusal::GenerationStale,
+            TransferRefusal::RevisionStale,
+        ]
+        .iter()
+        .map(|refusal| refusal.code().to_owned()),
+    );
+    actual.push(TransferDecision::Idempotent.code().to_owned());
+    actual.push(valid_transfer_code().to_owned());
     actual.sort_unstable();
 
     let mut expected = snapshot_lines(STABLE_CODES_SNAPSHOT);

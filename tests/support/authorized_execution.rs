@@ -37,6 +37,21 @@ pub fn valid_plan_document() -> Value {
     schema_fixture("execution-plan-body.v2.schema.json")
 }
 
+pub fn valid_decision_request() -> Value {
+    schema_fixture("human-decision-request.v1.schema.json")
+}
+
+pub fn valid_decision_response() -> Value {
+    let request = valid_decision_request();
+    let mut response = schema_fixture("human-decision-response.v1.schema.json");
+    response["requestDigest"] = request["requestDigest"].clone();
+    response
+}
+
+pub fn valid_execution_transfer() -> Value {
+    schema_fixture("execution-transfer.v1.schema.json")
+}
+
 pub struct EventFixture<'a> {
     pub event_type: &'a str,
     pub sequence: u64,

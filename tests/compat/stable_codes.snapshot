@@ -90,3 +90,30 @@ budget-arithmetic-invalid
 # CausalDecision — own codes only (2)
 event-valid
 idempotent-duplicate
+
+# DecisionRefusal (9)
+organization-mismatch
+attempt-mismatch
+request-replaced
+duplicate-divergent
+request-expired
+request-consumed
+choice-unknown
+actor-unauthorized
+revision-stale
+
+# DecisionDecision — own codes only (2)
+decision-valid
+idempotent-duplicate
+
+# TransferRefusal (6)
+duplicate-divergent
+transfer-expired
+generation-consumed
+identity-mismatch
+generation-stale
+revision-stale
+
+# TransferDecision — own codes only (2)
+transfer-valid
+idempotent-duplicate
