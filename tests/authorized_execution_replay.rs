@@ -389,6 +389,15 @@ fn complete_chain(registry: &ContractRegistry) -> Vec<AuthorizedExecutionEvent> 
     push_event(
         registry,
         &mut events,
+        "step-result-recorded",
+        Some(EFFECT_STEP),
+        Some("urn:libre-ai:edge:committed-1"),
+        Some("effect-committed"),
+        None,
+    );
+    push_event(
+        registry,
+        &mut events,
         "run-completed",
         None,
         None,
@@ -410,7 +419,7 @@ fn complete_chain_replays_deterministically() {
     let right = replay_authorized_execution(&graph, &independent_events).expect("second replay");
     assert_eq!(left, right);
     assert!(left.is_completed());
-    assert_eq!(left.sequence(), 12);
+    assert_eq!(left.sequence(), 13);
     assert_eq!(left.ready_step_id(), Some(TERMINAL_STEP));
     assert_eq!(left.tool_calls_total(), 0);
     assert_eq!(encode_state_for_test(&left), encode_state_for_test(&right));

@@ -227,6 +227,13 @@ enum ReplayPhase {
         attempt_id: String,
         worker_invocation_id: String,
     },
+    EffectTerminal {
+        step_id: String,
+        attempt_id: String,
+        worker_invocation_id: String,
+        selected_edge_id: String,
+        outcome_code: &'static str,
+    },
     Sealed,
     Transferred,
     Blocked,
@@ -357,7 +364,24 @@ fn apply_event(
             };
         }
         EventKind::StepResultRecorded { outcome_code } => {
-            require_invocation(&state.phase, event)?;
+            match &state.phase {
+                ReplayPhase::InvocationStarted { .. } => {
+                    require_invocation(&state.phase, event)?;
+                }
+                ReplayPhase::EffectTerminal {
+                    step_id,
+                    attempt_id,
+                    worker_invocation_id,
+                    selected_edge_id,
+                    outcome_code: terminal_outcome,
+                } if Some(step_id.as_str()) == event.step_id.as_deref()
+                    && Some(attempt_id.as_str()) == event.attempt_id.as_deref()
+                    && Some(worker_invocation_id.as_str())
+                        == event.worker_invocation_id.as_deref()
+                    && Some(selected_edge_id.as_str()) == event.selected_edge_id.as_deref()
+                    && *terminal_outcome == outcome_code => {}
+                _ => return forbidden(),
+            }
             route(graph, state, event, outcome_code)?;
         }
         EventKind::DecisionRequested => {
@@ -399,7 +423,14 @@ fn apply_event(
             let Some(outcome_code) = status.outcome_code() else {
                 return forbidden();
             };
-            route(graph, state, event, outcome_code)?;
+            validate_route(graph, event, outcome_code)?;
+            state.phase = ReplayPhase::EffectTerminal {
+                step_id: required(&event.step_id)?.to_owned(),
+                attempt_id: required(&event.attempt_id)?.to_owned(),
+                worker_invocation_id: required(&event.worker_invocation_id)?.to_owned(),
+                selected_edge_id: required(&event.selected_edge_id)?.to_owned(),
+                outcome_code,
+            };
         }
         EventKind::EffectUnknown { status } => {
             if *status != EffectStatus::StateUnknown {
@@ -458,14 +489,22 @@ fn route(
     event: &AuthorizedExecutionEvent,
     outcome_code: &str,
 ) -> Result<(), AuthorizedExecutionRefusal> {
+    state.ready_step_id = Some(validate_route(graph, event, outcome_code)?);
+    state.phase = ReplayPhase::Ready;
+    Ok(())
+}
+
+fn validate_route(
+    graph: &AuthorizedGraph,
+    event: &AuthorizedExecutionEvent,
+    outcome_code: &str,
+) -> Result<String, AuthorizedExecutionRefusal> {
     let step_id = required(&event.step_id)?;
     match select_graph_transition(graph, step_id, outcome_code) {
         GraphTransitionDecision::Selected(transition)
             if event.selected_edge_id.as_deref() == Some(transition.edge_id()) =>
         {
-            state.ready_step_id = Some(transition.target_step_id().to_owned());
-            state.phase = ReplayPhase::Ready;
-            Ok(())
+            Ok(transition.target_step_id().to_owned())
         }
         GraphTransitionDecision::Selected(_) | GraphTransitionDecision::Refused(_) => forbidden(),
     }
