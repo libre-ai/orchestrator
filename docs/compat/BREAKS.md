@@ -13,4 +13,4 @@ that bumps `version` in `Cargo.toml` and updates the snapshot file.
 
 | Date | Crate version | Surface | Change | Reason |
 | ---- | ------------- | ------- | ------ | ------ |
-| 2026-09-10 | 0.2.0 | Public API and stable codes | Add the authorized-execution graph, routing, authority, causal-validation and deterministic-replay surface; retain all 0.1.0 symbols and behavior | Record the first coherent additive authorized-execution API before any consumer can pin it |
+| 2026-09-10 | 0.2.0 | Public API and stable codes | Add the authorized-execution graph, routing, authority, causal-validation, deterministic-replay, human-decision and generation-transfer surface; retain all 0.1.0 symbols and behavior | Record the first coherent additive authorized-execution API before any consumer can pin it |
