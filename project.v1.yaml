@@ -12,19 +12,22 @@ statement:
   producing:
     - "parse_control_document et evaluate_control — un verdict sur une commande orchestrator-control.v1 : effet admis, reçu de rejeu idempotent qui ne répète jamais l'effet enregistré, ou refus à code stable qui ne reflète jamais la valeur rejetée"
     - "evaluate_budget_event — l'admission d'un événement causal contre les plafonds liés au plan, ou un refus nommé (plan-budget-exceeded, plan-identity-mismatch, causal-store-unavailable)"
+    - "le noyau natif authorized-execution 0.2.0 — validation de graphe, routage, rejeu causal, décision humaine, transfert de génération et continuité d'effet déterministes, sans persistance ni exécution"
     - "tools/review — des passes de revue par rôle rejouables contre un commit immuable, verdict machine validé par schéma, worktrees retirés en finally"
   without_depending_on:
     - "aucun effet propre à la crate : ni processus, ni fichier, ni socket, ni secret — frontière rendue exécutable par verification/agent-orchestrator/check-capabilities.ts"
     - "aucun service tiers : les types de contrats et les vecteurs d'événements viennent de git-deps intra-org épinglées par SHA"
-summary: "Cœur de décision d'orchestration d'agents — crate Rust sans effet — et outillage de revue en éventail à worktrees auto-nettoyés."
+summary: "Cœur Rust sans effet pour le contrôle et les décisions authorized-execution, avec preuves de rejeu déterministe et outillage de revue."
 current_situation: >-
-  Née verte en γ 3.4 (crate + tools/review + preuve + 3 docs d'application couche 2).
+  Le noyau natif authorized-execution 0.2.0 de WP-G3-O02 est implémenté et vert ; sa revue immuable par rôles reste en attente. Le run boundary, les effets réels et le déploiement restent bloqués et WP-G3-O01 n'est pas revendiqué.
 scope:
   - "API publique garantie de la crate libre-ai-agent-orchestrator (src/lib.rs) — contrôle : les fonctions parse_control_document, evaluate_control, evaluate_simulated_effect et command_fingerprint, et les types ControlCommand, ControlAction, ControlDecision, ControlApplication, ControlEffect, ControlPhase, ControlRefusal, RunControlState, StartPreflight, CommandReceipt, CommandCollisionObservation et SimulatedEffectDecision."
   - "API publique garantie — budget : la fonction evaluate_budget_event et les types PlanBudgetLimits, BudgetDecision et EventStoreObservation."
-  - "Stabilité déclarée : aucune. La crate est en 0.1.0, publish = false, consommée en git-dep Cargo épinglée par rev ; une rupture voyage par montée de rev chez le consommateur. Les codes rendus par ControlRefusal::code, ControlDecision::code, SimulatedEffectDecision::code et BudgetDecision::code (orchestrator.control.*, orchestrator.effect.*, plan-budget-exceeded…) sont épinglés de fait par les consommateurs qui les lisent comme chaînes : ils font partie de la surface à couvrir. Le critère compat-policy de la phase « service » est ce qui rendra cette stabilité opposable."
+  - "API publique garantie de la crate 0.2.0 — authorized-execution : documents validés, graphe et routage, autorité, causalité et rejeu, décision humaine, transfert de génération et continuité d'effet ; tous les symboles réexportés et codes stables sont épinglés par les instantanés de compatibilité."
+  - "Stabilité déclarée : additive en 0.2.0, publish = false, consommation par git-dep épinglée par révision ; toute rupture exige une montée de version et une entrée dans docs/compat/BREAKS.md."
   - "Décision de contrôle : validation des documents orchestrator-control.v1 par le registre de contrats verrouillé, sans refléter la valeur rejetée ; liaisons d'identité exactes entre run, tenant, mission, plan et autorisation ; faits de préflight faisant autorité avant d'accorder l'allocation d'un identifiant de run ; panne de magasin explicite, autorisation révoquée, révision périmée, annulation monotone, et rejeu idempotent rendu comme reçu."
   - "Décision de budget : arithmétique d'événements causaux et plafonds liés au plan, évalués contre l'état accepté que l'appelant présente — et refus explicite lorsque ce magasin est déclaré indisponible."
+  - "Phase 4A / WP-G3-O02 : frontière de validation stricte, décisions déterministes et sans I/O ; rejeu indépendant des 54 vecteurs Contracts et cinq scénarios de panne sur faux journal/faux exécuteur."
   - "tools/review : éventail de revue par rôle contre un commit immuable, lots parallèles, déduplication, verdict machine validé par schéma, et retrait des worktrees en finally — le modèle de nettoyage de référence pour la flotte."
   - "Hors périmètre : la crate est un cœur pur — elle ne possède ni registre d'événements, ni processus, ni système de fichiers, ni réseau, ni variable d'environnement, ni secret, ni persistance, ni bac à sable, ni harnais, ni adaptateur de fournisseur. La frontière n'est pas une intention : check-capabilities.ts liste la surface de dépendances admise et rejette tout import ou point d'entrée capable d'un effet système."
 non_goals:
@@ -33,13 +36,15 @@ non_goals:
   - "Prétendre à une conformité d'exécution : les tests n'emploient que des identifiants opaques synthétiques et ne démarrent aucune mission — un harnais et des revues à rôles séparés restent obligatoires avant tout effet réel (frontière WP-G2-A01)."
   - "Fournir le harnais, l'adaptateur de fournisseur ou le bac à sable : ils sont hors de ce dépôt, et check-capabilities.ts échoue si l'un d'eux entre."
   - "Promouvoir le schéma de verdict review-verdict.v0.1 au rang de contrat : il reste côté outil tant qu'un second producteur n'émet pas la forme."
+  - "Revendiquer WP-G3-O01, un run boundary ou un effet réel : la sérialisation PostgreSQL, l'idempotence et le fencing au point d'effet, les logs runtime zéro PII, la rétention, les tombstones de suppression, le rejeu de restauration et le déploiement restent bloqués."
+  - "Faire de LangGraph une autorité ou une dépendance normative : il reste un oracle optionnel de questions et scénarios de panne, absent du graphe de dépendances et remplaçable sans changer Missions ni les contrats."
 dependencies:
   - on: libre-ai/sdk-rs
-    why: "types de contrats Rust et validateur d'événements causaux verrouillé — git-dep Cargo intra-org sous [sources.allow-org] ; une évolution de contrat est une montée de rev"
-    pinned: "git+https://github.com/libre-ai/sdk-rs?rev=02214613c5cb0549d0618484d9b479c4cfb3c7ce"
+    why: "types Rust des contrats locked, registre embarqué et validation de documents — git-dep Cargo intra-org sous [sources.allow-org]"
+    pinned: "git+https://github.com/libre-ai/sdk-rs?rev=ac9f2020425733183839a58fc2c3928a4de5c066"
   - on: libre-ai/contracts
-    why: "vecteurs d'événements verrouillés rejoués par tests/locked_event_vectors.rs (bun install précède cargo test)"
-    pinned: "github:libre-ai/contracts#ee144f03cf7d3deeda02a9fcd5e10377c2e99cb4"
+    why: "autorité des schémas et des 54 vecteurs sémantiques authorized-execution rejoués directement par les tests"
+    pinned: "github:libre-ai/contracts#5b9b6668909119b670e0db62174419ab04e5b402"
   - on: libre-ai/envelope
     why: "K3 : tools/review emballe les preuves partagées en enveloppe d'intégrité et les rend gardées avant de les faire lire à un modèle de revue"
     pinned: "github:libre-ai/envelope#ad0e1a6d014ee531dd1938ed04c6b678c605dc9c"
@@ -50,11 +55,19 @@ maturity: usable
 confidence: medium
 exposure: spec-published
 freshness:
-  last_verified_on: "2026-08-18"
+  last_verified_on: "2026-09-10"
 scope_stability: stable
 benchmark:
   none: "n/a (shared brick, no external parity target)"
 phases:
+  - id: native-authorized-execution
+    title: Noyau natif authorized-execution Phase 4A
+    note: "Milestone: implemented-review-pending. Autorité : ADR-0037 / D43 / WP-G3-O02 au commit Governance 25778623d10150fe1ffb6ab8806e35fba7af5245. WP-G3-O01, run boundary, effets réels et déploiement restent bloqués."
+    exit_criteria:
+      - id: immutable-role-review
+        text: "Le même commit d'implémentation passe les revues architecture, sécurité, privacy et intégration, avec preuve locale complète, 54 vecteurs locked et cinq scénarios de panne."
+        weight: 1
+        status: pending
   - id: service
     title: En service dans la constellation
     exit_criteria:

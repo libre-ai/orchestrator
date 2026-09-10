@@ -1,11 +1,53 @@
 # Orchestrator — Governed agent run control
 
-**Reading this spec: two layers, not one.** `crates/agent-orchestrator` (this repository, crate `libre-ai-agent-orchestrator`) is a pure decision core: parse a control command, evaluate one action against caller-supplied state, evaluate one budget event against caller-supplied causal facts — no run register, no worker, no Biscuit verification, no PostgreSQL. Every section below carries an explicit status: **Implemented (covered by tests)** where it describes that core (real kebab-case refusal codes cited from `src/control.rs` and `src/budget.rs`), or **Target — closed by ADR-0018 D2 until a WP opens it** where it describes `crates/agent-orchestrator-run`, the not-yet-started runtime this specification also covers (the 15 snake_case codes below are that runtime's, and match no code this crate renders).
+**Reading this spec: two layers, not one.** `crates/agent-orchestrator` (this repository, crate `libre-ai-agent-orchestrator`) is a pure decision core. Its `0.2.0` surface adds the Phase 4A native authorized-execution semantics approved by ADR-0037 / D43 / WP-G3-O02 to the existing control and budget functions. It owns no run register, worker, Biscuit verification, PostgreSQL transaction or real effect. Sections marked **Target** describe `crates/agent-orchestrator-run`, a separate and still-blocked runtime; they are not claims about this crate.
 
-- **Path:** `crates/agent-orchestrator` (control core, already locked by `WP-G2-A01`, simulation-only) and `crates/agent-orchestrator-run` (runtime, written by this specification's package). The split is deliberate: ADR-0004 §8 bounds the core to simulation against a fake harness, so capabilities land in a separate crate with its own review rather than widening an accepted one.
+- **Path:** `crates/agent-orchestrator` (effect-free decision core, `WP-G2-A01` plus `WP-G3-O02`) and `crates/agent-orchestrator-run` (target runtime, not implemented). The split keeps capability-bearing persistence and execution out of the accepted pure core.
 - **Owner:** Polaris / Orchestrator (run control for agent fleets)
 - **Runtime:** Rust control core; no network, no secret, no provider at this stage (ADR-0018 D2)
 - **Tenant model:** organization; every run carries the tenant of the authorization that opened it
+
+## Phase 4A — native authorized-execution core
+
+**Implemented; immutable role review pending.** The crate now provides strict
+contract validation followed by private typed normalization, deterministic
+graph validation and routing, causal replay, human-decision evaluation,
+generation transfer and effect-attestation continuity decisions. Its returned
+applications describe what an authorized caller may persist or execute; the
+crate itself performs neither action.
+
+**Proven in Phase 4A:**
+
+- a strict validated input boundary using the Contracts registry pinned at
+  `5b9b6668909119b670e0db62174419ab04e5b402` through SDK Rust
+  `ac9f2020425733183839a58fc2c3928a4de5c066`;
+- deterministic graph, causal, decision, transfer and effect decisions with
+  stable refusal precedence and checked arithmetic;
+- independent replay of all 54 locked semantic vectors across graph, causal,
+  decision, effect, authority and transfer domains;
+- five fake-journal/fake-executor crash scenarios covering every cut around
+  invocation, effect commitment, terminal persistence and result recording;
+- no runtime capability in `src/`, enforced mechanically by the capability
+  boundary gate.
+
+**Not proven and blocking real execution:**
+
+- transactional PostgreSQL serialization under the organization barrier;
+- executor-enforced point-of-effect idempotency and fencing;
+- allow-listed, zero-PII runtime logs;
+- retention, deletion tombstones and restore replay.
+
+The payoff is a small, independently replayable semantic authority: callers
+can test ordering, refusal and recovery decisions without booting a runtime,
+and a future execution worker can be replaced without changing Missions or
+the canonical wire contracts. The limit matters equally: fake-harness crash
+proofs establish the protocol obligations, not the atomicity or confinement
+of a real executor.
+
+LangGraph remains an optional, non-normative source of questions and failure
+scenarios. It is absent from the dependency graph and is neither an authority
+nor an implicit specification; a LangGraph worker may later be connected or
+removed without changing Missions or these contracts.
 
 ## Purpose and actors
 
@@ -26,13 +68,13 @@ The orchestrator turns an authorized execution plan into a bounded, observable r
 
 **Status: Target — closed by ADR-0018 D2 until a WP opens it.** None of the six journeys below exist end-to-end: there is no run register, no worker invocation, no harness, no event persistence in this repository (`project.v1.yaml`'s "hors périmètre" scope). What exists today is narrower and pure: `evaluate_control` decides one `ControlAction` (`start`/`pause`/`resume`/`cancel`) against a caller-supplied `RunControlState` and `StartPreflight`; `evaluate_simulated_effect` decides whether a simulated effect is allowed for the current phase and authorization; `evaluate_budget_event` decides one causal event against caller-supplied budget limits. Journey 2 ("Apply a control document") is the closest existing match — schema validation and idempotent replay are real (`parse_control_document`, `command_fingerprint`) — but budget ceilings are evaluated by a separate function (`evaluate_budget_event`), not bound to a control document the way this journey implies.
 
-1. **Open a run.** The orchestrator receives an `execution-authorization.v1` naming tenant, mission, mission revision, mission record digest, plan and plan digest. It re-computes the plan digest from `execution-plan-body.v1` and refuses on mismatch. No authorization, no run.
+1. **Open a run.** The orchestrator receives an `execution-authorization.v2` naming tenant, mission, mission revision, mission record digest, plan and plan digest. It re-computes the plan digest from `execution-plan-body.v2` and refuses on mismatch. No authorization, no run.
 
 2. **Apply a control document.** A control document sets budget ceilings and liveness limits for the run. It is parsed strictly, its command fingerprint recorded, and its limits bound to the run for its whole life; a control document cannot be widened mid-run.
 
 3. **Sequence a step.** The orchestrator selects the next step of the plan, checks the agent's `capability_scope` covers it, requests execution under a named harness profile, and waits for the worker's result plus the harness attestation.
 
-4. **Record an event.** Every decision, refusal, budget movement and step result is appended to the run's event chain as `orchestrator-event.v2`, each entry linked to its predecessor. Nothing is edited; a correction is a new event.
+4. **Record an event.** Every decision, refusal, budget movement and step result is appended to the run's event chain as `orchestrator-event.v3`, each entry linked to its predecessor. Nothing is edited; a correction is a new event.
 
 5. **Halt.** A run halts on plan completion, on a budget ceiling reached, on a liveness limit reached, or on a refusal. A halt produces a decision dossier — what was done, what remains, the cause — and never a silent kill (ADR-0011 D6).
 
@@ -53,13 +95,24 @@ The orchestrator turns an authorized execution plan into a bounded, observable r
 
 **Status: Mixed.** The functions below are the crate's real, tested public API (`src/lib.rs`'s `pub use`); the Commands/Queries/Events below them describe the target runtime's protocol and match none of these signatures — there is no run register to open, no event to list, nothing to halt.
 
-**Implemented (covered by tests) — the decision core's actual protocol:**
+**Implemented (covered by tests) — legacy control and budget surface:**
 
 - `parse_control_document(registry, document) -> Result<ControlCommand, ControlRefusal>` — validates a JSON document against the locked `orchestrator-control.v1` schema and deserializes it; never reflects a rejected value back (`ControlRefusal::SchemaInvalid` on any failure).
 - `command_fingerprint(command) -> Result<String, ControlRefusal>` — SHA-256 of the command's canonical JSON (JCS) serialization, used for idempotent-replay detection.
 - `evaluate_control(state, command, evaluation_time, preflight, collision) -> ControlDecision` — the state machine: `Start` requires `StartPreflight` and allocates a run only when every preflight fact is ready; `Pause`/`Resume`/`Cancel` require an existing `RunControlState` and a matching `expected_revision`. Returns `ControlDecision::Apply`, `::Idempotent`, or `::Refuse(ControlRefusal)`.
 - `evaluate_simulated_effect(state: &RunControlState) -> SimulatedEffectDecision` — **not documented anywhere else in this spec, despite being in the crate's public scope (`project.v1.yaml`).** Allows a simulated effect only when the run's phase is `Running` and its caller-declared authorization is both present and active; every other phase (`Blocked`, `Paused`, `Cancelled`, `ResultSubmitted`, `Failed`) or an inactive/unavailable authorization refuses (`tests/control_core.rs::pause_block_and_terminal_states_refuse_every_new_simulated_effect`).
 - `evaluate_budget_event(observation, current, limits) -> BudgetDecision` — validates one causal event's arithmetic against `PlanBudgetLimits` and the caller-supplied event chain; refuses closed when the causal store is declared unavailable.
+
+**Implemented in Phase 4A — native authorized-execution surface:**
+
+- `parse_authorized_graph`, `evaluate_graph`, `select_graph_transition` and `evaluate_graph_authority` validate and evaluate the locked graph and authority semantics.
+- `parse_authorized_execution_event`, `evaluate_causal_transition` and `replay_authorized_execution` validate event digests and replay accepted state deterministically.
+- `evaluate_human_decision` and `evaluate_execution_transfer` decide exact request/response and generation-transfer observations without consuming or persisting them.
+- `evaluate_effect_attestation` applies the continuity barrier across invocation, fencing, attestation and terminal observations without calling an executor.
+
+All associated decision, refusal, state, transition, observation and
+application types are re-exported by `src/lib.rs` and pinned by the `0.2.0`
+compatibility snapshots.
 
 **Target — closed by ADR-0018 D2 until a WP opens it:**
 
@@ -73,7 +126,7 @@ Every event carries the run id, its predecessor digest, the tenant, and a monoto
 
 ## Refusal matrix
 
-**Status: Mixed.** The 24 codes below are real — rendered by this crate today, reached by `tests/control_core.rs` and `tests/budget_core.rs`, and pinned exhaustively by the compat-policy snapshot (`project.v1.yaml`'s `compat-policy` exit criterion) — and follow a `orchestrator.control.kebab-case` / `orchestrator.effect.kebab-case` / bare-`kebab-case` shape. The 15 `orchestrator.snake_case` codes further down are the target runtime's and match none of these; no consumer of this crate today can observe them.
+**Status: Mixed.** The 24 legacy codes listed below remain real and stable. Phase 4A adds the graph, authority, causal, decision, transfer, effect and authorized-execution boundary codes; their exhaustive values are mechanically pinned alongside the legacy set in `tests/compat/stable_codes.snapshot` and exercised by the focused and 54-vector suites. The 15 `orchestrator.snake_case` codes further down are the target runtime's and match none of these; no consumer of this crate today can observe them.
 
 **Implemented (covered by tests) — `ControlRefusal::code` (17):**
 
@@ -113,7 +166,7 @@ Refusals are closed and stable. Each names the failing invariant, never the payl
 
 ## Data
 
-**Status: Target — closed by ADR-0018 D2 until a WP opens it.** This crate owns no store: `evaluate_control` and `evaluate_budget_event` are pure functions over caller-supplied state (`RunControlState`, `EventStoreObservation`) and return a decision, never persist one. `check-capabilities.ts` fails the build on any filesystem, network or process capability in `src/`, so a PostgreSQL adapter cannot land inside this crate — it belongs to `crates/agent-orchestrator-run`.
+**Status: Target — closed by ADR-0018 D2 until a WP opens it.** This crate owns no store: its control, budget and authorized-execution evaluators are pure functions over caller-supplied state or observations and return decisions, never persist them. `check-capabilities.ts` fails the build on any filesystem, network or process capability in `src/`, so a PostgreSQL adapter cannot land inside this crate — it belongs to `crates/agent-orchestrator-run`.
 
 PostgreSQL is authoritative, under the shared tenant barrier: `ENABLE` and `FORCE ROW LEVEL SECURITY`, policy on `current_setting('app.tenant_id')`, access only through `withTenantDbTransaction`.
 
@@ -133,7 +186,7 @@ The authorizer refuses cross-mission operation by `check if`, and refuses any ca
 
 **Status: Mixed.**
 
-**Rust (control core) — Implemented (covered by tests), with two overstated specifics:** control document parsing (`parse_control_document`), budget evaluation (`evaluate_budget_event`) and the refusal decision itself are real and pure — same inputs, same `ControlDecision`/`BudgetDecision`, verified by `#[forbid(unsafe_code)]` plus `check-capabilities.ts`. "Plan digest verification" and "capability scope checks" are not: neither `execution-plan-body.v1` nor `capability_scope` appears anywhere in `src/`. "Event chain construction" is also imprecise — `evaluate_budget_event` _validates_ a caller-supplied event against caller-supplied prior state via `evaluate_orchestrator_event_chain` (an `sdk-rs` function); it constructs nothing.
+**Rust (decision core) — Implemented (covered by tests):** control document parsing, control/budget evaluation and the Phase 4A authorized-execution surface above are real and pure. Graph and event documents are validated against the pinned registry before normalization; decisions consume caller-supplied observations and return values without constructing a store or performing an effect. Capability scope verification, persistence atomicity and executor confinement remain runtime responsibilities.
 
 **Rust (run boundary) — Target — closed by ADR-0018 D2 until a WP opens it:** worker invocation under a harness profile, attestation collection, persistence adapters. This is the only part holding capabilities, and it holds exactly those opened by ADR-0018 D2: spawn a local process, nothing else.
 
@@ -153,18 +206,23 @@ Degraded modes are explicit and fail closed. Revocation store unavailable: deny 
 
 ## Contracts
 
-**Status: Mixed.** Two of the nine entries below are read by this crate's source today; the other seven are the target runtime's, referenced by no code in `src/` or `tests/`. `event-chain-vectors.v1.json` — real and load-bearing — was missing from this list; added below rather than silently left out.
+**Status: Mixed.** The legacy control schema and event-chain vectors remain load-bearing. Phase 4A additionally resolves the locked authorized-execution schemas through the embedded SDK registry and replays the semantic corpus directly from the pinned Contracts checkout. Runtime-only contracts remain targets, not implemented inputs.
 
 **Implemented (covered by tests):**
 
 - `contracts/schemas/orchestrator-control.v1.schema.json` — `src/control.rs`'s `CONTROL_SCHEMA`, validated in `parse_control_document`.
 - `contracts/fixtures/agent-orchestration-v1/event-chain-vectors.v1.json` — replayed by `tests/locked_event_vectors.rs` through `evaluate_budget_event`.
+- `contracts/schemas/execution-graph.v1.schema.json` and `execution-plan-body.v2.schema.json` — graph validation, routing and graph/plan authority binding.
+- `contracts/schemas/orchestrator-event.v3.schema.json` — event validation, JCS digest verification and deterministic replay.
+- `contracts/schemas/human-decision-request.v1.schema.json` and `human-decision-response.v1.schema.json` — human-decision evaluation.
+- `contracts/schemas/execution-transfer.v1.schema.json` — generation-transfer evaluation.
+- `contracts/schemas/effect-attestation.v1.schema.json` — effect continuity and fencing evaluation.
+- `contracts/fixtures/authorized-execution-v1/semantic-vectors.v1.json` — all 54 locked cases replayed directly by `tests/authorized_execution_vectors.rs`.
 
 **Target — closed by ADR-0018 D2 until a WP opens it:**
 
-- `contracts/schemas/orchestrator-event.v2.schema.json`
-- `contracts/schemas/execution-plan-body.v1.schema.json`
-- `contracts/schemas/execution-authorization.v1.schema.json`
+- `contracts/schemas/execution-authorization.v2.schema.json`
+- `contracts/schemas/step-invocation.v1.schema.json`
 - `contracts/schemas/agent-contributor-lineage.v1.schema.json`
 - `contracts/authz/authority-v1.datalog` (agent facts, per-agent revocation)
 - `contracts/fixtures/agent-orchestration-v1/mission-transition-vectors.v1.json`
@@ -176,15 +234,15 @@ These are locked by ADR-0004 and are not amended by any implementation package.
 
 **Status: Mixed.**
 
-**Implemented (covered by tests) today:** 9 tests in `tests/control_core.rs` (schema validation, preflight-gated `Start`, `Pause`/`Resume`/`Cancel` transitions, idempotent replay vs. divergence, revision overflow, simulated-effect refusal by phase); 7 tests in `tests/budget_core.rs` (plan-limit arithmetic, causal-store outage, exact-duplicate idempotency, plan-identity substitution); 1 test in `tests/locked_event_vectors.rs` replaying the locked event-chain vectors; 13 tests in `verification/agent-orchestrator/capability-boundary.test.ts` proving the zero-effect boundary. 21 of the 24 real codes in the Refusal matrix above have their exact string asserted by at least one of these tests; every `ControlDecision` and `SimulatedEffectDecision` variant is reached at the decision-logic level even where its code string isn't separately asserted. **Gap, not a claim to paper over:** `orchestrator.control.fingerprint-invalid`, `orchestrator.control.state-missing` and `orchestrator.control.preflight-missing` are reached by no test in this suite today — `command_fingerprint` is only ever exercised on its success path, no test omits `preflight` on a `Start` command, and no test omits `state` on a non-`Start` command.
+**Implemented (covered by tests) today:** the legacy control, budget and locked event-chain suites remain green. Phase 4A adds focused graph, replay, decision, transfer and effect suites; one independent test replays the exact 54-case locked semantic corpus directly from Contracts; and one end-to-end fake-journal/fake-executor suite proves five crash cut points plus identity, fencing, profile and collision substitutions. The capability gate continues to prove that production `src/` cannot gain process, filesystem, network, environment, thread or clock access.
 
-**Target — closed by ADR-0018 D2 until a WP opens it:** "mission transition" and "authorization" fixtures (no such vectors are consumed by this crate — see Contracts above). Golden vectors of the existing control core stay green: event chain, mission transition, authorization and digest fixtures. Added by the realization packages: a two-tenant integration test proving cross-tenant run access is denied; a replay test proving an event chain reconstructs run state byte-identically; a refusal test for every code of the target matrix above; a proof that a step without attestation is refused.
+**Target — closed by ADR-0018 D2 until a WP opens it:** mission-transition and authorization fixtures are not consumed by this crate. Runtime realization must add a two-tenant integration test proving cross-tenant run access is denied, transactional replay against the real event store, and proof that no worker invocation occurs without a bound authorization and harness profile.
 
 Evidence is published under `distribution/evidence/` per I-20, with the coverage metrics that drive the growth law.
 
 ## Work packages
 
-**Status: Target — closed by ADR-0018 D2 until a WP opens it.** The three work packages below are the not-yet-started runtime's. The decision core they would sit on top of corresponds to the already-closed `WP-G2-A01` (see the Path line at the top of this spec) — it is not one of the three below, and needs no further work package to be "done"; its own release gate is the compat-policy mechanism (`project.v1.yaml`, `tests/compat_surface.rs`), not this section.
+**Status: Target — closed until separately authorized.** Phase 4A is authorized by WP-G3-O02 and does not complete or claim WP-G3-O01. The three packages below are capability-bearing runtime work and remain unstarted.
 
 Realization is split so that each package opens exactly one surface and can be reviewed against it:
 
@@ -196,8 +254,10 @@ Each package declares its exclusive write paths and carries the mandatory criter
 
 ## Release and rollback
 
-**Status: Target — closed by ADR-0018 D2 until a WP opens it.** The gates below govern the runtime's release, not this crate's. The decision core's own release discipline is `cargo test --locked` plus the compat-policy snapshot (`project.v1.yaml`); it has no cross-tenant storage, no attestation and no rollback of its own to describe, since it persists nothing.
+**Status: Mixed.** The gates below govern a future runtime, not Phase 4A. The decision core's release discipline includes formatting, all-feature tests, clippy with warnings denied, policy gates, dependency licensing, the 54-vector proof, the five-cut crash proof and immutable role review.
 
 **Release gates.** Every refusal code reachable by a test. Cross-tenant denial proven at the storage layer. Event chain replay byte-identical. No step executed without a bound attestation. Coverage metrics published. Independent review by reviewers distinct from the implementer (K4).
 
-**Rollback.** A run control release rolls back by reverting the deployable and replaying the event chain — no data migration is required, since events are append-only and closed runs are immutable. A rollback never rewrites history: a superseded run stays readable with its original events, marked by a new event rather than edited.
+**Phase 4A rollback.** Before any future consumer pins this surface, revert the additive Phase 4A commits. After a consumer exists, pin that consumer to the prior Orchestrator revision first, then revert Phase 4A here. No canonical event migration exists because this pure core adds neither a contract nor a stored-state schema.
+
+**Future runtime rollback.** A run-control release must roll back the deployable and replay the canonical event chain without rewriting accepted history. That mechanism is not implemented or proven by Phase 4A.
